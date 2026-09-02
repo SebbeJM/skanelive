@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skåne Live – realtidskarta över kollektivtrafiken</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #0d0d0d;
+    --line: #262626;
+    --fg: #e7ece8;
+    --muted: #7d9088;
+    --accent: #ff8552;   /* signalorange – används sparsamt, för fordon i rörelse */
+    --accent-dim: #c9612f;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Iowan Old Style", "Georgia", serif;
+  }
+
+  #app {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.9rem 1.25rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  header h1 span {
+    color: var(--accent);
+  }
+
+  #status {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-align: right;
+    line-height: 1.4;
+  }
+
+  #status .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    margin-right: 0.4em;
+  }
+
+  #status.live .dot {
+    background: #3ecf8e;
+  }
+
+  #status.error .dot {
+    background: var(--accent);
+  }
+
+  #map {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+  }
+
+  /* Fordonsmarkörer */
+  .vehicle-marker {
+    /* Glider mjukt till ny position mellan varje datauppdatering, i stället
+       för att hoppa. Bör vara nästan lika lång som POLL_INTERVAL_MS i JS. */
+    transition: transform 6.5s linear;
+  }
+  /* Stäng av glidningen medan kartan pannas/zoomas, annars "flyter" alla
+     markörer konstigt när man interagerar med kartan. */
+  #map.map-moving .vehicle-marker {
+    transition: none !important;
+  }
+  /* Tåg rör sig så mycket snabbare att en 6,5s-glidning "överskjuter" i kurvor.
+     Kortare glidning ser mer rimligt ut för dem. */
+  .vehicle-marker.rail {
+    transition: transform 3s linear;
+  }
+
+  .vehicle-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    color: var(--fg);
+    font-size: 10px;
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+  }
+  /* Fallback-färg om en linje saknar färgdata */
+  .vehicle-icon.unknown { background: var(--accent-dim); }
+
+  .maplibregl-popup-content {
+    border-radius: 4px;
+    font-family: "Iowan Old Style", Georgia, serif;
+    background: var(--panel);
+    color: var(--fg);
+    padding: 0.6rem 0.8rem;
+  }
+  .maplibregl-popup-tip { border-top-color: var(--panel); border-bottom-color: var(--panel); }
+  .maplibregl-popup-close-button { color: var(--muted); }
+  .popup-content b {
+    display: block;
+    margin-bottom: 0.25em;
+  }
+  .popup-content {
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  #config-banner {
+    position: absolute;
+    z-index: 1000;
+    top: 5.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel);
+    color: var(--fg);
+    padding: 0.7rem 1rem;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    font-family: ui-monospace, monospace;
+    font-size: 0.78rem;
+    max-width: 90vw;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Skåne <span>Live</span></h1>
+    <div id="status"><span class="dot"></span>ansluter…</div>
+  </header>
+  <div style="position: relative; height: 100%;">
+    <div id="map"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/protobufjs@7.2.6/dist/protobuf.min.js"></script>
+<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+// ============================================================
+// KONFIGURATION – ändra detta
+// ============================================================
+// URL:en till din Cloudflare Worker (se worker.js för hur du skapar den).
+// Workern proxar Trafiklabs data och löser CORS.
+const PROXY_URL = "https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev";
+
+// Din Worker svarar även på /routes för statisk linjedata (färger m.m.)
+const ROUTES_URL = `${PROXY_URL}/routes`;
+
+// Hur ofta kartan ska uppdateras (millisekunder). Trafiklab uppdaterar
+// positioner ca var 2:a sekund, men var snäll mot API:et — 5-10s räcker.
+// OBS: hänger ihop med .vehicle-marker { transition: transform ... } i CSS:en
+// ovan — ändrar du denna, uppdatera gärna den siffran också så glidningen
+// hinner klart innan nästa uppdatering.
+const POLL_INTERVAL_MS = 7000;
+
+// Ungefärlig mittpunkt över Skåne (lat, lon)
+const MAP_CENTER = [55.99, 13.45];
+const MAP_ZOOM = 9;
+
+// ============================================================
+// MANUELLA LINJEFÄRGER – redigera denna lista själv
+// ============================================================
+// Skånetrafiken publicerar tyvärr inga officiella linjefärger i sin data,
+// så du kan sätta dina egna här. Nyckeln är linjenumret (route_short_name,
+// alltså det du ser på bussen/tåget), värdet är en hex-färg UTAN #.
+// Linjer som inte finns här får en automatiskt genererad/klassificerad
+// färg istället (se classifyColorForRoute nedan).
+//
+// Exempel:
+// const MANUAL_ROUTE_COLORS = {
+//   "1":   "2e7d32",  // grön
+//   "5":   "f9a825",  // gul
+//   "171": "1565c0",  // blå
+// };
+const MANUAL_ROUTE_COLORS = {
+};
+
+// ============================================================
+// Minimal GTFS-Realtime protobuf-schema (bara det vi behöver: VehiclePositions)
+// ============================================================
+const GTFS_RT_PROTO = `
+syntax = "proto2";
+package transit_realtime;
+
+message FeedMessage {
+  required FeedHeader header = 1;
+  repeated FeedEntity entity = 2;
+}
+
+message FeedHeader {
+  required string gtfs_realtime_version = 1;
+  optional uint64 timestamp = 3;
+}
+
+message FeedEntity {
+  required string id = 1;
+  optional VehiclePosition vehicle = 4;
+}
+
+message VehiclePosition {
+  optional TripDescriptor trip = 1;
+  optional VehicleDescriptor vehicle = 8;
+  optional Position position = 2;
+  optional uint64 timestamp = 5;
+}
+
+message TripDescriptor {
+  optional string trip_id = 1;
+  optional string route_id = 5;
+}
+
+message VehicleDescriptor {
+  optional string id = 1;
+  optional string label = 2;
+}
+
+message Position {
+  required float latitude = 1;
+  required float longitude = 2;
+  optional float bearing = 3;
+  optional float speed = 5;
+}
+`;
+
+// ============================================================
+// Karta (MapLibre GL JS + OpenFreeMap – gratis vektor-tiles, ingen nyckel)
+// ============================================================
+const mapContainer = document.getElementById("map");
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: "https://tiles.openfreemap.org/styles/liberty",
+  center: [MAP_CENTER[1], MAP_CENTER[0]], // MapLibre vill ha [lon, lat]
+  zoom: MAP_ZOOM,
+  attributionControl: false,
+});
+map.addControl(new maplibregl.NavigationControl(), "top-right");
+map.addControl(
+  new maplibregl.AttributionControl({
+    customAttribution: "OpenFreeMap © OpenMapTiles Data from OpenStreetMap",
+  })
+);
+
+// Stäng av den mjuka glidnings-transitionen på markörer medan kartan
+// pannas/zoomas, annars "släpar" de efter på ett konstigt sätt.
+map.on("movestart", () => mapContainer.classList.add("map-moving"));
+map.on("moveend", () => mapContainer.classList.remove("map-moving"));
+
+// Mörklägger kartan på riktigt (inte bara ett CSS-filter) genom att gå
+// igenom varje lager i stilen och sätta mörka färger utifrån vilken TYP
+// av lager det är. Byggnader blir uttryckligen svarta, enligt önskemål.
+// Tar bort kartlager vi inte behöver för en trafikkarta — POI-ikoner,
+// vägnamn, flygplatser, gränser, byar/orter under stadsnivå osv. Färre
+// lager = mindre CPU/GPU-arbete per bildruta, särskilt vid panorering/zoom.
+// Vi behåller bara det som ger geografisk orientering: stads-/ortsnamn.
+const LAYERS_TO_REMOVE = [
+  "building-3d", // ersatt av den billigare platta "building"-varianten ovan
+  "aeroway_fill", "aeroway_runway", "aeroway_taxiway",
+  "boundary_3", "boundary_2", "boundary_disputed",
+  "waterway_line_label", "water_name_point_label", "water_name_line_label",
+  "poi_r20", "poi_r7", "poi_r1",
+  "highway-name-path", "highway-name-minor", "highway-name-major",
+  "highway-shield-non-us", "highway-shield-us-interstate", "road_shield_us",
+  "road_one_way_arrow", "road_one_way_arrow_opposite",
+  "label_other", "label_village", "label_state",
+  "label_country_3", "label_country_2", "label_country_1",
+];
+// OBS: "airport" och "poi_transit" tas INTE bort längre — de ger
+// flygplatsikoner respektive hållplatsikoner (buss/tåg/flyg) på kartan.
+
+function removeUnneededLayers() {
+  for (const id of LAYERS_TO_REMOVE) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
+}
+
+function applyDarkTheme() {
+  const style = map.getStyle();
+  for (const layer of style.layers) {
+    const id = layer.id;
+    const type = layer.type;
+    try {
+      if (type === "background") {
+        map.setPaintProperty(id, "background-color", "#0a0a0a");
+      } else if (type === "raster") {
+        // T.ex. reliefskuggningen i botten, gjord för ljust tema — dölj den.
+        map.setPaintProperty(id, "raster-opacity", 0);
+      } else if (id === "building") {
+        map.setPaintProperty(id, "fill-color", "#000000");
+        map.setPaintProperty(id, "fill-outline-color", "#000000");
+        // Låt den platta (billigare) byggnadsrenderingen gälla ALLA zoomnivåer
+        // i stället för att byta till den tyngre 3D-extruderade versionen.
+        map.setLayerZoomRange(id, 13, 24);
+      } else if (id === "building-3d") {
+        // Hanteras inte längre — vi tar bort hela lagret nedan (se
+        // removeUnneededLayers) eftersom fill-extrusion är betydligt
+        // tyngre att rita än vanlig platt fyllnad.
+      } else if (type === "fill") {
+        let fillColor;
+        if (id.includes("water")) {
+          fillColor = "#050505";
+        } else if (id.includes("park") || id.includes("landcover") || id.includes("wood") || id.includes("grass")) {
+          fillColor = "#0e0e0e";
+        } else {
+          fillColor = "#131313";
+        }
+        map.setPaintProperty(id, "fill-color", fillColor);
+        // Vissa fyllnadslager (t.ex. "park") har en EGEN kantfärg
+        // (fill-outline-color) som annars förblir sitt ursprungliga färgglada
+        // värde även efter att vi bytt fill-color — det var boven bakom den
+        // gröna kanten. Matcha den mot samma gråton.
+        if (layer.paint && layer.paint["fill-outline-color"] !== undefined) {
+          map.setPaintProperty(id, "fill-outline-color", fillColor);
+        }
+      } else if (type === "line") {
+        if (id.includes("waterway")) {
+          map.setPaintProperty(id, "line-color", "#1a1a1a");
+        } else if (id.includes("boundary")) {
+          map.setPaintProperty(id, "line-color", "#3a3a3a");
+        } else {
+          map.setPaintProperty(id, "line-color", "#333333");
+        }
+      } else if (type === "symbol") {
+        if (layer.paint && layer.paint["text-color"] !== undefined) {
+          map.setPaintProperty(id, "text-color", "#c9c9c9");
+        }
+        if (layer.paint && layer.paint["text-halo-color"] !== undefined) {
+          map.setPaintProperty(id, "text-halo-color", "#0a0a0a");
+        }
+      }
+    } catch (err) {
+      // Vissa lager saknar egenskapen vi försöker sätta — hoppa bara över dem.
+      console.warn(`Kunde inte omfärga lagret "${id}":`, err.message);
+    }
+  }
+
+  // Extra tydlig, "ruta-liknande" bakgrund bakom hållplats- och
+  // flygplatsetiketter så de syns bättre mot kartan.
+  for (const id of ["poi_transit", "airport"]) {
+    if (!map.getLayer(id)) continue;
+    try {
+      map.setPaintProperty(id, "text-halo-width", 2.2);
+      map.setPaintProperty(id, "text-halo-color", "#0a0a0a");
+      map.setPaintProperty(id, "text-halo-blur", 0);
+    } catch (err) {
+      console.warn(`Kunde inte förstärka etiketten för "${id}":`, err.message);
+    }
+  }
+}
+
+const statusEl = document.getElementById("status");
+function setStatus(state, text) {
+  statusEl.className = state;
+  statusEl.innerHTML = `<span class="dot"></span>${text}`;
+}
+
+if (PROXY_URL.includes("ditt-worker-namn")) {
+  const banner = document.createElement("div");
+  banner.id = "config-banner";
+  banner.textContent = "⚠ Sätt PROXY_URL i index.html till din egen Cloudflare Worker-URL (se worker.js)";
+  document.querySelector("#app > div").appendChild(banner);
+}
+
+// ============================================================
+// Klassificering & färger
+// ============================================================
+
+// Klassificerar en linje utifrån Skånetrafikens namn-/nummerkonventioner:
+// stadsbussar = 1–2 siffror (grön), regionbussar = 3 siffror (gul),
+// Pågatåg = lila, Öresundståg = silvergrå. Returnerar null om inget mönster
+// känns igen, så att den slumpmässiga fallback-färgen används istället.
+function classifyColorForRoute(shortName, longName) {
+  const name = `${shortName} ${longName || ""}`.toLowerCase();
+  if (name.includes("pågatåg")) return "645fa2";
+  if (name.includes("öresundståg")) return "a3a9ad";
+
+  const trimmed = (shortName || "").trim();
+  if (/^\d+$/.test(trimmed)) {
+    if (trimmed.length <= 2) return "2e7d32";   // stadsbuss – grön
+    if (trimmed.length === 3) return "f9a825";  // regionbuss – gul
+  }
+  if (/^skåneexpressen/i.test(trimmed)) return "f9a825"; // expressbussar räknas som regionbuss
+
+  return null;
+}
+
+// Genererar en stabil, distinkt färg för en linje som saknar officiell
+// route_color i GTFS-datan och inget känt mönster ovan. Samma route_id
+// ger alltid samma färg, så kartan är konsekvent mellan uppdateringar.
+function fallbackColorForRoute(id) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  return hslToHex(hue, 65, 45);
+}
+
+function hslToHex(h, s, l) {
+  s /= 100;
+  l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (x) => Math.round(255 * x).toString(16).padStart(2, "0");
+  return `${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+// ============================================================
+// Statisk linjedata
+// ============================================================
+// route_id -> { color, textColor, shortName, routeType }, fylls av loadRouteColors()
+const routesById = new Map();
+// trip_id -> route_id, fylls av loadRouteColors() (realtidsflödet skickar bara trip_id)
+const routeIdByTripId = new Map();
+// trip_id -> destinationstext (trip_headsign), fylls av loadRouteColors()
+const headsignByTripId = new Map();
+// shape_id -> [[lat, lon], ...], fylls av loadRouteColors()
+const shapePointsById = new Map();
+// route_id -> Set(shape_id), fylls av loadRouteColors()
+const shapeIdsByRoute = new Map();
+// route_id -> redan uppritad som linje på kartan
+const drawnRouteShapes = new Set();
+
+// Alla ruttlinjer samlas i EN enda GeoJSON-källa/lager i stället för att
+// varje linje får sitt eget kartlager — mycket billigare för webbläsaren
+// att rita och hantera, särskilt när många linjer är aktiva samtidigt.
+const routeLinesGeoJSON = { type: "FeatureCollection", features: [] };
+let routeLinesLayerReady = false;
+let routeLinesDirty = false;
+
+function ensureRouteLinesLayer() {
+  if (routeLinesLayerReady) return;
+  map.addSource("route-lines", { type: "geojson", data: routeLinesGeoJSON });
+  // Lägg linjerna ovanpå bakgrundskartan men UNDER hållplats-/flygplatsikonerna
+  // (poi_transit), så att ikonerna inte hamnar dolda under linjerna.
+  const beforeId = map.getLayer("poi_transit") ? "poi_transit" : undefined;
+  map.addLayer(
+    {
+      id: "route-lines",
+      type: "line",
+      source: "route-lines",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": ["get", "color"],
+        "line-width": 2.5,
+        "line-opacity": 0.55,
+      },
+    },
+    beforeId
+  );
+  routeLinesLayerReady = true;
+}
+
+// Ritar ut körvägen (som en färgad linje) för en linje, en gång per linje.
+// Ritar just nu BARA ut linjer för tåg (route_type=2) — busslinjer visas
+// fortfarande som rörliga markörer, men utan linjeöverlägg på kartan.
+function ensureRouteShapeDrawn(routeId, routeInfo) {
+  if (!routeId || drawnRouteShapes.has(routeId)) return;
+  drawnRouteShapes.add(routeId); // markera oavsett, så vi inte kollar om och om igen
+
+  if (!routeInfo || routeInfo.routeType !== "2") return;
+
+  const shapeIds = shapeIdsByRoute.get(routeId);
+  if (!shapeIds) return;
+
+  const color = routeInfo && routeInfo.color ? `#${routeInfo.color}` : "#7d9088";
+  let addedAny = false;
+  for (const shapeId of shapeIds) {
+    const points = shapePointsById.get(shapeId);
+    if (!points || points.length < 2) continue;
+    routeLinesGeoJSON.features.push({
+      type: "Feature",
+      properties: { color },
+      geometry: {
+        type: "LineString",
+        // GeoJSON vill ha [lon, lat], vår lagring är [lat, lon].
+        coordinates: points.map(([lat, lon]) => [lon, lat]),
+      },
+    });
+    addedAny = true;
+  }
+  if (addedAny) routeLinesDirty = true;
+}
+
+// Skickar bara EN uppdatering av ruttlinjerna till kartan per pollningsomgång,
+// även om flera nya linjer upptäcktes under samma omgång.
+function flushRouteLinesIfDirty() {
+  if (!routeLinesDirty) return;
+  ensureRouteLinesLayer();
+  map.getSource("route-lines").setData(routeLinesGeoJSON);
+  routeLinesDirty = false;
+}
+
+// ============================================================
+// Fordonsmarkörer
+// ============================================================
+const markers = new Map(); // vehicle id -> { marker, el, popup, iconKey }
+
+function iconHtml(routeInfo) {
+  const hasColor = routeInfo && routeInfo.color;
+  const bg = hasColor ? `#${routeInfo.color}` : null;
+  const fg = routeInfo && routeInfo.textColor ? `#${routeInfo.textColor}` : "#eef1ec";
+  const label = routeInfo && routeInfo.shortName ? routeInfo.shortName : "";
+  const style = bg ? `background:${bg};color:${fg};` : "";
+  const cls = hasColor ? "" : "unknown";
+  return `<div class="vehicle-icon ${cls}" style="${style}">${label}</div>`;
+}
+
+function markerClassName(routeInfo) {
+  return `vehicle-marker${routeInfo && routeInfo.routeType === "2" ? " rail" : ""}`;
+}
+
+// Uppdaterar bara VÅRA egna klasser (vehicle-marker/rail) via classList,
+// i stället för att skriva över hela className — annars riskerar vi att
+// radera en intern klass MapLibre själv satt på elementet för positionering.
+function applyMarkerClasses(el, routeInfo) {
+  el.classList.add("vehicle-marker");
+  el.classList.toggle("rail", Boolean(routeInfo && routeInfo.routeType === "2"));
+}
+
+function updateVehicles(entities) {
+  const seenIds = new Set();
+
+  for (const entity of entities) {
+    const vp = entity.vehicle;
+    if (!vp || !vp.position) continue;
+
+    const id = (vp.vehicle && (vp.vehicle.id || vp.vehicle.label)) || entity.id;
+
+    const lat = vp.position.latitude;
+    const lon = vp.position.longitude;
+    const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
+    let routeId = vp.trip && vp.trip.routeId ? vp.trip.routeId : "";
+    if (!routeId && tripId) {
+      routeId = routeIdByTripId.get(tripId) || "";
+    }
+    const routeInfo = routesById.get(routeId);
+    const displayName = (routeInfo && routeInfo.shortName) || routeId || "okänd";
+
+    // Dölj bara fordon där vi INTE ens har ett linjenummer att visa (skulle
+    // bli bokstavligen "okänd linje"). Fordon med ett känt nummer (t.ex. "8",
+    // "166") visas alltså alltid, även om vi saknar färgdata för just den.
+    if (displayName === "okänd") {
+      continue;
+    }
+
+    seenIds.add(id);
+
+    ensureRouteShapeDrawn(routeId, routeInfo);
+
+    const headsign = headsignByTripId.get(tripId) || "";
+
+    const popupHtml = `
+      <div class="popup-content">
+        <b>Linje ${displayName}</b>
+        ${headsign ? `På väg mot: ${headsign}<br>` : ""}
+        Hastighet: ${vp.position.speed != null ? Math.round(vp.position.speed * 3.6) + " km/h" : "okänd"}
+      </div>
+    `;
+
+    const iconKey = `${(routeInfo && routeInfo.color) || ""}|${displayName}`;
+
+    if (markers.has(id)) {
+      const entry = markers.get(id);
+      // Byt bara ut själva ikonen (färg/etikett) om den faktiskt ändrats —
+      // annars bryts den mjuka CSS-glidningen eftersom ett nytt "från"-läge
+      // annars aldrig hinner etableras.
+      if (entry.iconKey !== iconKey) {
+        applyMarkerClasses(entry.el, routeInfo);
+        entry.el.innerHTML = iconHtml(routeInfo);
+        entry.iconKey = iconKey;
+      }
+      entry.marker.setLngLat([lon, lat]);
+      entry.popup.setHTML(popupHtml);
+    } else {
+      const el = document.createElement("div");
+      applyMarkerClasses(el, routeInfo);
+      el.innerHTML = iconHtml(routeInfo);
+
+      const popup = new maplibregl.Popup({ offset: 14 }).setHTML(popupHtml);
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat([lon, lat])
+        .setPopup(popup)
+        .addTo(map);
+
+      markers.set(id, { marker, el, popup, iconKey });
+    }
+  }
+
+  // Ta bort fordon som inte längre finns i flödet
+  for (const [id, entry] of markers.entries()) {
+    if (!seenIds.has(id)) {
+      entry.marker.remove();
+      markers.delete(id);
+    }
+  }
+
+  flushRouteLinesIfDirty();
+}
+
+// ============================================================
+// Hämta och tolka protobuf-data
+// ============================================================
+let FeedMessageType = null;
+
+async function loadProtoSchema() {
+  const root = protobuf.parse(GTFS_RT_PROTO).root;
+  FeedMessageType = root.lookupType("transit_realtime.FeedMessage");
+}
+
+// ============================================================
+// Statisk linjedata (färger, trips, shapes) – hämtas en gång vid start
+// ============================================================
+async function loadRouteColors() {
+  try {
+    const res = await fetch(ROUTES_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const zipBuffer = await res.arrayBuffer();
+
+    const zip = await JSZip.loadAsync(zipBuffer);
+    const routesFile = zip.file("routes.txt");
+    if (!routesFile) throw new Error("routes.txt saknas i zip-filen");
+
+    const csvText = await routesFile.async("string");
+    const parsed = Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
+    });
+
+    for (const row of parsed.data) {
+      const id = (row.route_id || "").trim();
+      if (!id) continue;
+      const shortName = (row.route_short_name || "").trim();
+      const longName = (row.route_long_name || "").trim();
+      const routeType = (row.route_type || "").trim();
+      const officialColor = (row.route_color || "").trim();
+      const manualColor = MANUAL_ROUTE_COLORS[shortName];
+      const heuristicColor = classifyColorForRoute(shortName, longName);
+      routesById.set(id, {
+        color: manualColor || officialColor || heuristicColor || fallbackColorForRoute(id),
+        textColor: (row.route_text_color || "").trim(),
+        shortName,
+        routeType,
+        colorSource: manualColor ? "manual" : officialColor ? "official" : heuristicColor ? "heuristic" : "auto",
+      });
+    }
+    console.log(`Laddade färger för ${routesById.size} linjer`);
+    const railRoutes = [...routesById.values()].filter((r) => r.routeType === "2");
+    console.log(`Varav ${railRoutes.length} järnvägslinjer (route_type=2):`, railRoutes.map((r) => r.shortName));
+    // Extra kontroll: sök på NAMN oavsett route_type, ifall Pågatåg/Öresundståg
+    // finns med i datan men är felmärkta med en annan route_type-siffra.
+    const trainsByName = parsed.data.filter((row) => {
+      const n = `${row.route_short_name || ""} ${row.route_long_name || ""}`.toLowerCase();
+      return n.includes("pågatåg") || n.includes("öresundståg");
+    });
+    console.log(
+      `Rutter som nämner Pågatåg/Öresundståg i NAMNET (oavsett route_type): ${trainsByName.length}`,
+      trainsByName.map((r) => ({ route_id: r.route_id, short: r.route_short_name, long: r.route_long_name, type: r.route_type }))
+    );
+
+    // Realtidsflödet skickar bara trip_id, inte route_id direkt — vi behöver
+    // trips.txt för att slå upp vilken linje varje resa (trip) tillhör, samt
+    // vilken shape (körväg) och destinationstext (headsign) den har.
+    const tripsFile = zip.file("trips.txt");
+    if (tripsFile) {
+      const tripsText = await tripsFile.async("string");
+      const parsedTrips = Papa.parse(tripsText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
+      });
+      for (const row of parsedTrips.data) {
+        const tripId = (row.trip_id || "").trim();
+        const routeId = (row.route_id || "").trim();
+        const shapeId = (row.shape_id || "").trim();
+        const headsign = (row.trip_headsign || "").trim();
+        if (tripId && routeId) routeIdByTripId.set(tripId, routeId);
+        if (tripId && headsign) headsignByTripId.set(tripId, headsign);
+        if (routeId && shapeId) {
+          if (!shapeIdsByRoute.has(routeId)) shapeIdsByRoute.set(routeId, new Set());
+          shapeIdsByRoute.get(routeId).add(shapeId);
+        }
+      }
+      console.log(`Laddade linjekoppling för ${routeIdByTripId.size} resor (trips)`);
+    }
+
+    // shapes.txt innehåller de faktiska GPS-punkterna för varje körväg.
+    const shapesFile = zip.file("shapes.txt");
+    if (shapesFile) {
+      const shapesText = await shapesFile.async("string");
+      const parsedShapes = Papa.parse(shapesText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
+      });
+      const raw = new Map(); // shape_id -> [{seq, lat, lon}]
+      for (const row of parsedShapes.data) {
+        const shapeId = (row.shape_id || "").trim();
+        const lat = parseFloat(row.shape_pt_lat);
+        const lon = parseFloat(row.shape_pt_lon);
+        const seq = parseInt(row.shape_pt_sequence, 10);
+        if (!shapeId || Number.isNaN(lat) || Number.isNaN(lon)) continue;
+        if (!raw.has(shapeId)) raw.set(shapeId, []);
+        raw.get(shapeId).push({ seq: Number.isNaN(seq) ? 0 : seq, lat, lon });
+      }
+      for (const [shapeId, points] of raw) {
+        points.sort((a, b) => a.seq - b.seq);
+        shapePointsById.set(shapeId, points.map((p) => [p.lat, p.lon]));
+      }
+      console.log(`Laddade ${shapePointsById.size} körvägar (shapes)`);
+    }
+  } catch (err) {
+    // Kartan funkar ändå, fordonen visas bara i en enfärgad standardfärg.
+    console.warn("Kunde inte ladda linjefärger:", err);
+  }
+}
+
+async function fetchVehiclePositions() {
+  const res = await fetch(PROXY_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const buffer = new Uint8Array(await res.arrayBuffer());
+  const message = FeedMessageType.decode(buffer);
+  const obj = FeedMessageType.toObject(message, { defaults: true });
+  const entities = obj.entity || [];
+
+  if (!fetchVehiclePositions.loggedSample && entities.length > 0) {
+    fetchVehiclePositions.loggedSample = true;
+    const sample = entities.find((e) => e.vehicle && e.vehicle.trip);
+    if (sample) {
+      console.log("Exempel trip_id/route_id från fordonsflödet:", sample.vehicle.trip.tripId, sample.vehicle.trip.routeId);
+    }
+    // Visa detaljer om fordon vi INTE lyckas matcha mot en linje, så vi kan
+    // se om t.ex. tågen (Pågatåg/Öresundståg) har ett igenkännbart mönster
+    // i trip_id, fordons-ID eller etikett som vi kan identifiera dem på.
+    const unmatched = entities.filter((e) => {
+      const vp = e.vehicle;
+      if (!vp || !vp.trip) return false;
+      const tripId = vp.trip.tripId || "";
+      let routeId = vp.trip.routeId || "";
+      if (!routeId && tripId) routeId = routeIdByTripId.get(tripId) || "";
+      return !routesById.has(routeId);
+    });
+    console.log(`${unmatched.length} av ${entities.length} fordon går INTE att matcha mot en linje just nu. Exempel:`);
+    console.log(
+      unmatched.slice(0, 10).map((e) => ({
+        trip_id: e.vehicle.trip.tripId,
+        route_id: e.vehicle.trip.routeId,
+        vehicle_id: e.vehicle.vehicle && e.vehicle.vehicle.id,
+        vehicle_label: e.vehicle.vehicle && e.vehicle.vehicle.label,
+      }))
+    );
+  }
+
+  return entities;
+}
+
+async function pollLoop() {
+  try {
+    const entities = await fetchVehiclePositions();
+    updateVehicles(entities);
+    const count = markers.size;
+    setStatus("live", `live · ${count} fordon · uppdaterad ${new Date().toLocaleTimeString("sv-SE")}`);
+  } catch (err) {
+    console.error(err);
+    setStatus("error", `kunde inte hämta data (${err.message})`);
+  } finally {
+    setTimeout(pollLoop, POLL_INTERVAL_MS);
+  }
+}
+
+function whenMapLoaded() {
+  return new Promise((resolve) => {
+    if (map.loaded()) resolve();
+    else map.once("load", resolve);
+  });
+}
+
+(async function init() {
+  await whenMapLoaded();
+  applyDarkTheme();
+  removeUnneededLayers();
+  await loadProtoSchema();
+  await loadRouteColors(); // hämtas en gång; kartan väntar in detta så första ritningen får rätt färger
+  pollLoop();
+})();
+</script>
+</body>
+</html>
