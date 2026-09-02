@@ -121,6 +121,18 @@
   }
   /* Fallback-färg om en linje saknar färgdata */
   .vehicle-icon.unknown { background: var(--accent-dim); }
+  /* Simulerade tåg (positionen är uppskattad från tidtabellen, inte GPS) —
+     streckad kant i stället för solid, så det syns att det är en uppskattning. */
+  .vehicle-icon.simulated { border: 2px dashed #ffffff; }
+  /* Tunn svart kontur runt linjenumret, så det syns även mot ljusa
+     linjefärger (t.ex. blek gul) där vit/ljus text annars smälter in. */
+  .vehicle-icon .label {
+    text-shadow:
+      -1px -1px 0 #000,
+       1px -1px 0 #000,
+      -1px  1px 0 #000,
+       1px  1px 0 #000;
+  }
 
   .maplibregl-popup-content {
     border-radius: 4px;
@@ -282,6 +294,29 @@ map.addControl(
 // pannas/zoomas, annars "släpar" de efter på ett konstigt sätt.
 map.on("movestart", () => mapContainer.classList.add("map-moving"));
 map.on("moveend", () => mapContainer.classList.remove("map-moving"));
+
+// Uppdaterar direkt vilka fordon som visar linjenummer eller bara en
+// enfärgad prick, så det inte dröjer upp till en hel pollningsomgång innan
+// etiketterna dyker upp/försvinner efter att man zoomat.
+map.on("zoomend", () => {
+  const showLabels = shouldShowLabels();
+  for (const entry of markers.values()) {
+    const key = `${(entry.routeInfo && entry.routeInfo.color) || ""}|${(entry.routeInfo && entry.routeInfo.shortName) || ""}|${showLabels}`;
+    if (entry.iconKey === key) continue;
+    applyMarkerClasses(entry.el, entry.routeInfo);
+    entry.el.innerHTML = iconHtml(entry.routeInfo);
+    entry.iconKey = key;
+  }
+  for (const entry of simMarkers.values()) {
+    const key = `${(entry.routeInfo && entry.routeInfo.color) || ""}|${(entry.routeInfo && entry.routeInfo.shortName) || ""}|${showLabels}`;
+    if (entry.iconKey === key) continue;
+    applyMarkerClasses(entry.el, entry.routeInfo);
+    entry.el.classList.add("simulated");
+    entry.el.innerHTML = iconHtml(entry.routeInfo);
+    entry.el.querySelector(".vehicle-icon").classList.add("simulated");
+    entry.iconKey = key;
+  }
+});
 
 // Mörklägger kartan på riktigt (inte bara ett CSS-filter) genom att gå
 // igenom varje lager i stilen och sätta mörka färger utifrån vilken TYP
@@ -452,12 +487,155 @@ const routesById = new Map();
 const routeIdByTripId = new Map();
 // trip_id -> destinationstext (trip_headsign), fylls av loadRouteColors()
 const headsignByTripId = new Map();
+// trip_id -> shape_id, fylls av loadRouteColors() (behövs för att tåg ska
+// kunna följa den faktiska spårgeometrin i simuleringen)
+const tripShapeId = new Map();
 // shape_id -> [[lat, lon], ...], fylls av loadRouteColors()
 const shapePointsById = new Map();
 // route_id -> Set(shape_id), fylls av loadRouteColors()
 const shapeIdsByRoute = new Map();
 // route_id -> redan uppritad som linje på kartan
 const drawnRouteShapes = new Set();
+
+// ============================================================
+// Simulerade tågpositioner (baserat på tidtabell, inte GPS)
+// ============================================================
+// Trafiklab saknar GPS-positioner för tåg, så vi uppskattar var tåget är
+// just nu genom att interpolera mellan två stationers schemalagda tider.
+// stop_id -> { lat, lon, name }, fylls av loadRouteColors()
+const stopsById = new Map();
+// trip_id -> [{ stopId, arr, dep, seq }, ...] (sorterad), BARA för tåg
+const railTripStops = new Map();
+
+// Räknar sekunder sedan senaste kl. 04:00 (inte midnatt) — standardtrick
+// för att hantera GTFS-tider som "25:10:00" (kl 01:10 påföljande dygn)
+// utan att behöva hålla reda på hela kalendern.
+function nowServiceSeconds() {
+  const now = new Date();
+  let secs = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  if (secs < 4 * 3600) secs += 24 * 3600;
+  return secs;
+}
+
+function gtfsTimeToSeconds(hms) {
+  const parts = (hms || "").split(":").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+  return parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+
+// ---- Geometrihjälp: låter tåget följa den faktiska spårlinjen (shapes.txt)
+// i stället för att bara gå i rak linje mellan stationerna. ----
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Bygger kumulativa avstånd (i meter) från shapens startpunkt till varje punkt.
+function buildCumulativeDistances(points) {
+  const cum = [0];
+  for (let i = 1; i < points.length; i++) {
+    cum.push(cum[i - 1] + haversineMeters(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1]));
+  }
+  return cum;
+}
+
+// Projicerar en punkt (t.ex. en station) på närmaste punkt LÄNGS en linje,
+// och returnerar hur långt in på linjen (i meter) den projicerade punkten är.
+function projectOntoShape(lat, lon, points, cum) {
+  let bestDist = Infinity;
+  let bestAlong = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const [aLat, aLon] = points[i];
+    const [bLat, bLon] = points[i + 1];
+    // Enkel planar projektion (bra nog på så här korta avstånd), med
+    // longitud skalad efter cos(latitud) för att inte snedvrida avståndet.
+    const latRef = (aLat + bLat) / 2;
+    const cosLat = Math.cos((latRef * Math.PI) / 180);
+    const ax = aLon * cosLat, ay = aLat, bx = bLon * cosLat, by = bLat;
+    const px = lon * cosLat, py = lat;
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    let t = lenSq > 0 ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    const projLat = aLat + (bLat - aLat) * t;
+    const projLon = aLon + (bLon - aLon) * t;
+    const d = haversineMeters(lat, lon, projLat, projLon);
+    if (d < bestDist) {
+      bestDist = d;
+      bestAlong = cum[i] + (cum[i + 1] - cum[i]) * t;
+    }
+  }
+  return bestAlong;
+}
+
+// Hittar koordinaten som ligger ett visst avstånd (meter) in på en linje.
+function pointAtDistance(points, cum, dist) {
+  const total = cum[cum.length - 1];
+  if (dist <= 0) return { lat: points[0][0], lon: points[0][1] };
+  if (dist >= total) return { lat: points[points.length - 1][0], lon: points[points.length - 1][1] };
+  let i = 1;
+  while (i < cum.length && cum[i] < dist) i++;
+  const segLen = cum[i] - cum[i - 1];
+  const t = segLen > 0 ? (dist - cum[i - 1]) / segLen : 0;
+  const [aLat, aLon] = points[i - 1];
+  const [bLat, bLon] = points[i];
+  return { lat: aLat + (bLat - aLat) * t, lon: aLon + (bLon - aLon) * t };
+}
+
+// shape_id -> { points, cum } — cachas så vi slipper räkna om kumulativa
+// avstånd varje gång flera tåg delar samma spårgeometri.
+const shapeGeometryCache = new Map();
+function getShapeGeometry(shapeId) {
+  if (shapeGeometryCache.has(shapeId)) return shapeGeometryCache.get(shapeId);
+  const points = shapePointsById.get(shapeId);
+  if (!points || points.length < 2) return null;
+  const geo = { points, cum: buildCumulativeDistances(points) };
+  shapeGeometryCache.set(shapeId, geo);
+  return geo;
+}
+
+// Räknar ut en uppskattad position för ett tåg just nu. Om vi har spårets
+// geometri (shape) och lyckats projicera stationerna på den, följer tåget
+// den faktiska spårlinjen. Annars faller vi tillbaka på en rak linje mellan
+// de två stationerna.
+function computeSimulatedPosition(stops, shapeId) {
+  if (!stops || stops.length < 2) return null;
+  const t = nowServiceSeconds();
+  if (t < stops[0].dep || t > stops[stops.length - 1].arr) return null;
+
+  const geo = shapeId ? getShapeGeometry(shapeId) : null;
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (t >= a.dep && t <= b.arr) {
+      const span = b.arr - a.dep;
+      const frac = span > 0 ? (t - a.dep) / span : 0;
+
+      if (geo && a.distAlong != null && b.distAlong != null && b.distAlong > a.distAlong) {
+        const dist = a.distAlong + (b.distAlong - a.distAlong) * frac;
+        return pointAtDistance(geo.points, geo.cum, dist);
+      }
+
+      // Reservlösning: rak linje mellan stationerna.
+      const stopA = stopsById.get(a.stopId);
+      const stopB = stopsById.get(b.stopId);
+      if (!stopA || !stopB) return null;
+      return {
+        lat: stopA.lat + (stopB.lat - stopA.lat) * frac,
+        lon: stopA.lon + (stopB.lon - stopA.lon) * frac,
+      };
+    }
+  }
+  return null;
+}
 
 // Alla ruttlinjer samlas i EN enda GeoJSON-källa/lager i stället för att
 // varje linje får sitt eget kartlager — mycket billigare för webbläsaren
@@ -534,6 +712,14 @@ function flushRouteLinesIfDirty() {
 // ============================================================
 const markers = new Map(); // vehicle id -> { marker, el, popup, iconKey }
 
+// Vid utzoomad vy visas fordon bara som en enfärgad prick (för att undvika
+// en massa oläslig text i taget). Zooma in förbi detta värde för att se
+// linjenummer i mitten av varje prick.
+const ZOOM_LABEL_THRESHOLD = 12;
+function shouldShowLabels() {
+  return map.getZoom() >= ZOOM_LABEL_THRESHOLD;
+}
+
 function iconHtml(routeInfo) {
   const hasColor = routeInfo && routeInfo.color;
   const bg = hasColor ? `#${routeInfo.color}` : null;
@@ -541,7 +727,8 @@ function iconHtml(routeInfo) {
   const label = routeInfo && routeInfo.shortName ? routeInfo.shortName : "";
   const style = bg ? `background:${bg};color:${fg};` : "";
   const cls = hasColor ? "" : "unknown";
-  return `<div class="vehicle-icon ${cls}" style="${style}">${label}</div>`;
+  const labelHtml = shouldShowLabels() ? `<span class="label">${label}</span>` : "";
+  return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
 }
 
 function markerClassName(routeInfo) {
@@ -596,7 +783,7 @@ function updateVehicles(entities) {
       </div>
     `;
 
-    const iconKey = `${(routeInfo && routeInfo.color) || ""}|${displayName}`;
+    const iconKey = `${(routeInfo && routeInfo.color) || ""}|${displayName}|${shouldShowLabels()}`;
 
     if (markers.has(id)) {
       const entry = markers.get(id);
@@ -608,6 +795,7 @@ function updateVehicles(entities) {
         entry.el.innerHTML = iconHtml(routeInfo);
         entry.iconKey = iconKey;
       }
+      entry.routeInfo = routeInfo;
       entry.marker.setLngLat([lon, lat]);
       entry.popup.setHTML(popupHtml);
     } else {
@@ -621,7 +809,7 @@ function updateVehicles(entities) {
         .setPopup(popup)
         .addTo(map);
 
-      markers.set(id, { marker, el, popup, iconKey });
+      markers.set(id, { marker, el, popup, iconKey, routeInfo });
     }
   }
 
@@ -634,6 +822,73 @@ function updateVehicles(entities) {
   }
 
   flushRouteLinesIfDirty();
+}
+
+// ============================================================
+// Rendering av simulerade tåg (samma ikon-/popup-logik som riktiga fordon,
+// men egen markörkarta så vi inte rör den fungerande busslogiken ovan)
+// ============================================================
+const simMarkers = new Map(); // trip_id -> { marker, el, popup, iconKey }
+
+function updateSimulatedTrains() {
+  const activeTripIds = new Set();
+
+  for (const [tripId, stops] of railTripStops) {
+    const pos = computeSimulatedPosition(stops, tripShapeId.get(tripId));
+    if (!pos) continue;
+    activeTripIds.add(tripId);
+
+    const routeId = routeIdByTripId.get(tripId) || "";
+    const routeInfo = routesById.get(routeId);
+    const displayName = (routeInfo && routeInfo.shortName) || routeId || "okänd";
+    const headsign = headsignByTripId.get(tripId) || "";
+
+    ensureRouteShapeDrawn(routeId, routeInfo);
+
+    const popupHtml = `
+      <div class="popup-content">
+        <b>Linje ${displayName}</b>
+        ${headsign ? `På väg mot: ${headsign}<br>` : ""}
+        Simulerad position (baserad på tidtabell, ej GPS)
+      </div>
+    `;
+
+    const iconKey = `${(routeInfo && routeInfo.color) || ""}|${displayName}|${shouldShowLabels()}`;
+
+    if (simMarkers.has(tripId)) {
+      const entry = simMarkers.get(tripId);
+      if (entry.iconKey !== iconKey) {
+        applyMarkerClasses(entry.el, routeInfo);
+        entry.el.classList.add("simulated");
+        entry.el.innerHTML = iconHtml(routeInfo);
+        entry.el.querySelector(".vehicle-icon").classList.add("simulated");
+        entry.iconKey = iconKey;
+      }
+      entry.routeInfo = routeInfo;
+      entry.marker.setLngLat([pos.lon, pos.lat]);
+      entry.popup.setHTML(popupHtml);
+    } else {
+      const el = document.createElement("div");
+      applyMarkerClasses(el, routeInfo);
+      el.innerHTML = iconHtml(routeInfo);
+      el.querySelector(".vehicle-icon").classList.add("simulated");
+
+      const popup = new maplibregl.Popup({ offset: 14 }).setHTML(popupHtml);
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat([pos.lon, pos.lat])
+        .setPopup(popup)
+        .addTo(map);
+
+      simMarkers.set(tripId, { marker, el, popup, iconKey, routeInfo });
+    }
+  }
+
+  for (const [tripId, entry] of simMarkers.entries()) {
+    if (!activeTripIds.has(tripId)) {
+      entry.marker.remove();
+      simMarkers.delete(tripId);
+    }
+  }
 }
 
 // ============================================================
@@ -715,6 +970,7 @@ async function loadRouteColors() {
         const headsign = (row.trip_headsign || "").trim();
         if (tripId && routeId) routeIdByTripId.set(tripId, routeId);
         if (tripId && headsign) headsignByTripId.set(tripId, headsign);
+        if (tripId && shapeId) tripShapeId.set(tripId, shapeId);
         if (routeId && shapeId) {
           if (!shapeIdsByRoute.has(routeId)) shapeIdsByRoute.set(routeId, new Set());
           shapeIdsByRoute.get(routeId).add(shapeId);
@@ -747,6 +1003,76 @@ async function loadRouteColors() {
         shapePointsById.set(shapeId, points.map((p) => [p.lat, p.lon]));
       }
       console.log(`Laddade ${shapePointsById.size} körvägar (shapes)`);
+    }
+
+    // stops.txt (position för varje hållplats/station) och stop_times.txt
+    // (tidtabell per resa) — behövs för att simulera tågpositioner, eftersom
+    // Trafiklab saknar GPS-positioner för tåg. Vi filtrerar bort allt utom
+    // tåg-resor för att slippa parsa/lagra data för alla busstopp i onödan.
+    const stopsFile = zip.file("stops.txt");
+    if (stopsFile) {
+      const stopsText = await stopsFile.async("string");
+      const parsedStops = Papa.parse(stopsText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
+      });
+      for (const row of parsedStops.data) {
+        const stopId = (row.stop_id || "").trim();
+        const lat = parseFloat(row.stop_lat);
+        const lon = parseFloat(row.stop_lon);
+        if (!stopId || Number.isNaN(lat) || Number.isNaN(lon)) continue;
+        stopsById.set(stopId, { lat, lon, name: (row.stop_name || "").trim() });
+      }
+      console.log(`Laddade ${stopsById.size} hållplatser/stationer (stops)`);
+    }
+
+    const railTripIds = new Set();
+    for (const [tripId, rId] of routeIdByTripId) {
+      const info = routesById.get(rId);
+      if (info && info.routeType === "2") railTripIds.add(tripId);
+    }
+
+    const stopTimesFile = zip.file("stop_times.txt");
+    if (stopTimesFile && railTripIds.size > 0) {
+      const stopTimesText = await stopTimesFile.async("string");
+      const parsedStopTimes = Papa.parse(stopTimesText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
+      });
+      const raw = new Map(); // trip_id -> [{stopId, arr, dep, seq}]
+      for (const row of parsedStopTimes.data) {
+        const tripId = (row.trip_id || "").trim();
+        if (!railTripIds.has(tripId)) continue; // hoppa över alla busstopp direkt
+        const arr = gtfsTimeToSeconds(row.arrival_time);
+        const dep = gtfsTimeToSeconds(row.departure_time);
+        const seq = parseInt(row.stop_sequence, 10);
+        const stopId = (row.stop_id || "").trim();
+        if (arr == null || dep == null || !stopId) continue;
+        if (!raw.has(tripId)) raw.set(tripId, []);
+        raw.get(tripId).push({ stopId, arr, dep, seq: Number.isNaN(seq) ? 0 : seq });
+      }
+      for (const [tripId, stops] of raw) {
+        stops.sort((a, b) => a.seq - b.seq);
+        railTripStops.set(tripId, stops);
+      }
+
+      // Projicera varje stations koordinat på tågets spårlinje (shape), så
+      // simuleringen kan följa spåret i stället för att gena rakt mellan
+      // stationerna. Faller tillbaka på rak linje om shapen saknas.
+      for (const [tripId, stops] of railTripStops) {
+        const shapeId = tripShapeId.get(tripId);
+        const geo = shapeId ? getShapeGeometry(shapeId) : null;
+        if (!geo) continue;
+        for (const stop of stops) {
+          const s = stopsById.get(stop.stopId);
+          if (!s) continue;
+          stop.distAlong = projectOntoShape(s.lat, s.lon, geo.points, geo.cum);
+        }
+      }
+
+      console.log(`Laddade tidtabell för ${railTripStops.size} tågresor (stop_times, endast tåg)`);
     }
   } catch (err) {
     // Kartan funkar ändå, fordonen visas bara i en enfärgad standardfärg.
@@ -794,11 +1120,15 @@ async function fetchVehiclePositions() {
 }
 
 async function pollLoop() {
+  // Körs alltid, oavsett om busshämtningen nedan lyckas — bygger bara på
+  // redan inladdad tidtabellsdata och systemklockan, inget nätverksanrop.
+  updateSimulatedTrains();
+
   try {
     const entities = await fetchVehiclePositions();
     updateVehicles(entities);
-    const count = markers.size;
-    setStatus("live", `live · ${count} fordon · uppdaterad ${new Date().toLocaleTimeString("sv-SE")}`);
+    const count = markers.size + simMarkers.size;
+    setStatus("live", `live · ${count} fordon (${simMarkers.size} simulerade tåg) · uppdaterad ${new Date().toLocaleTimeString("sv-SE")}`);
   } catch (err) {
     console.error(err);
     setStatus("error", `kunde inte hämta data (${err.message})`);
