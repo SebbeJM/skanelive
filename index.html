@@ -282,7 +282,11 @@ const map = new maplibregl.Map({
   center: [MAP_CENTER[1], MAP_CENTER[0]], // MapLibre vill ha [lon, lat]
   zoom: MAP_ZOOM,
   attributionControl: false,
+  dragRotate: false, // stänger av kartrotation via högerklick-drag
+  pitchWithRotate: false,
+  touchPitch: false,
 });
+map.touchZoomRotate.disableRotation(); // samma sak för pekskärm/mobil
 map.addControl(new maplibregl.NavigationControl(), "top-right");
 map.addControl(
   new maplibregl.AttributionControl({
@@ -295,26 +299,19 @@ map.addControl(
 map.on("movestart", () => mapContainer.classList.add("map-moving"));
 map.on("moveend", () => mapContainer.classList.remove("map-moving"));
 
-// Uppdaterar direkt vilka fordon som visar linjenummer eller bara en
-// enfärgad prick, så det inte dröjer upp till en hel pollningsomgång innan
-// etiketterna dyker upp/försvinner efter att man zoomat.
+// Uppdaterar direkt vilka fordon som visar linjenummer, samt ikonstorleken,
+// så det inte dröjer upp till en hel pollningsomgång innan det syns att man
+// zoomat.
 map.on("zoomend", () => {
-  const showLabels = shouldShowLabels();
   for (const entry of markers.values()) {
-    const key = `${(entry.routeInfo && entry.routeInfo.color) || ""}|${(entry.routeInfo && entry.routeInfo.shortName) || ""}|${showLabels}`;
-    if (entry.iconKey === key) continue;
     applyMarkerClasses(entry.el, entry.routeInfo);
     entry.el.innerHTML = iconHtml(entry.routeInfo);
-    entry.iconKey = key;
   }
   for (const entry of simMarkers.values()) {
-    const key = `${(entry.routeInfo && entry.routeInfo.color) || ""}|${(entry.routeInfo && entry.routeInfo.shortName) || ""}|${showLabels}`;
-    if (entry.iconKey === key) continue;
     applyMarkerClasses(entry.el, entry.routeInfo);
     entry.el.classList.add("simulated");
     entry.el.innerHTML = iconHtml(entry.routeInfo);
     entry.el.querySelector(".vehicle-icon").classList.add("simulated");
-    entry.iconKey = key;
   }
 });
 
@@ -720,12 +717,23 @@ function shouldShowLabels() {
   return map.getZoom() >= ZOOM_LABEL_THRESHOLD;
 }
 
+// Ikonerna krymper vid utzoomning i stället för att vara lika stora hela
+// tiden — annars tar de orimligt mycket plats på en översiktsvy över Skåne.
+function iconSizeForZoom() {
+  const minSize = 10, maxSize = 22, minZoom = 8, maxZoom = 13;
+  const z = map.getZoom();
+  const t = Math.max(0, Math.min(1, (z - minZoom) / (maxZoom - minZoom)));
+  return Math.round(minSize + (maxSize - minSize) * t);
+}
+
 function iconHtml(routeInfo) {
   const hasColor = routeInfo && routeInfo.color;
   const bg = hasColor ? `#${routeInfo.color}` : null;
   const fg = routeInfo && routeInfo.textColor ? `#${routeInfo.textColor}` : "#eef1ec";
   const label = routeInfo && routeInfo.shortName ? routeInfo.shortName : "";
-  const style = bg ? `background:${bg};color:${fg};` : "";
+  const size = iconSizeForZoom();
+  const fontSize = Math.max(7, Math.round(size * 0.45));
+  const style = `${bg ? `background:${bg};color:${fg};` : ""}width:${size}px;height:${size}px;font-size:${fontSize}px;`;
   const cls = hasColor ? "" : "unknown";
   const labelHtml = shouldShowLabels() ? `<span class="label">${label}</span>` : "";
   return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
@@ -1144,12 +1152,25 @@ function whenMapLoaded() {
   });
 }
 
+// Ritar ut ALLA tåglinjer direkt vid start, oavsett om något tåg faktiskt
+// är i trafik just nu — annars syns linjerna bara när ett tåg råkar vara
+// aktivt på just den sträckan.
+function drawAllRailLines() {
+  for (const [routeId, routeInfo] of routesById) {
+    if (routeInfo.routeType === "2") {
+      ensureRouteShapeDrawn(routeId, routeInfo);
+    }
+  }
+  flushRouteLinesIfDirty();
+}
+
 (async function init() {
   await whenMapLoaded();
   applyDarkTheme();
   removeUnneededLayers();
   await loadProtoSchema();
   await loadRouteColors(); // hämtas en gång; kartan väntar in detta så första ritningen får rätt färger
+  drawAllRailLines();
   pollLoop();
 })();
 </script>
