@@ -1164,6 +1164,41 @@ function drawAllRailLines() {
   flushRouteLinesIfDirty();
 }
 
+// ============================================================
+// TILLFÄLLIG DIAGNOS — kör manuellt i konsolen: checkVrOperator()
+// Kollar om Pågatåg/Öresundståg ligger publicerade under operatören "vr"
+// (VR Sverige) i stället för "skane". Kan tas bort när vi vet svaret.
+// ============================================================
+window.checkVrOperator = async function () {
+  console.log("Hämtar vr-operatörens statiska data...");
+  const res = await fetch(`${PROXY_URL}/routes-vr`, { cache: "no-store" });
+  if (!res.ok) {
+    console.error(`Kunde inte hämta vr-data: HTTP ${res.status}`);
+    return;
+  }
+  const zipBuffer = await res.arrayBuffer();
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const routesFile = zip.file("routes.txt");
+  if (!routesFile) {
+    console.error("routes.txt saknas i vr-zipen");
+    return;
+  }
+  const csvText = await routesFile.async("string");
+  const parsed = Papa.parse(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
+  });
+  console.log(`vr-operatören har totalt ${parsed.data.length} linjer.`);
+  const trains = parsed.data.filter((row) => {
+    const n = `${row.route_short_name || ""} ${row.route_long_name || ""}`.toLowerCase();
+    return n.includes("pågatåg") || n.includes("öresundståg");
+  });
+  console.log(`Varav ${trains.length} nämner Pågatåg/Öresundståg i namnet:`, trains);
+  const rail = parsed.data.filter((row) => (row.route_type || "").trim() === "2");
+  console.log(`Varav ${rail.length} har route_type=2 (järnväg):`, rail.slice(0, 20));
+};
+
 (async function init() {
   await whenMapLoaded();
   applyDarkTheme();
