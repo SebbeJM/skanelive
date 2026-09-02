@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skåne Live – realtidskarta över kollektivtrafiken</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --ink: #0f1f2e;
+    --paper: #eef1ec;
+    --line: #c7cdc4;
+    --accent: #e8623a;   /* signalorange – används sparsamt, för fordon i rörelse */
+    --accent-dim: #b9502f;
+    --muted: #5c6b66;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Georgia", serif;
+  }
+
+  #app {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.9rem 1.25rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  header h1 span {
+    color: var(--accent-dim);
+  }
+
+  #status {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-align: right;
+    line-height: 1.4;
+  }
+
+  #status .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    margin-right: 0.4em;
+  }
+
+  #status.live .dot {
+    background: #2f7d5a;
+  }
+
+  #status.error .dot {
+    background: var(--accent);
+  }
+
+  #map {
+    width: 100%;
+    height: 100%;
+    background: var(--paper);
+  }
+
+  /* Fordonsmarkörer */
+  .vehicle-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--ink);
+    border: 2px solid var(--paper);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    color: var(--paper);
+    font-size: 10px;
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+  }
+  /* Fallback-färg om en linje saknar färgdata */
+  .vehicle-icon.unknown { background: var(--accent-dim); }
+
+  .leaflet-popup-content-wrapper {
+    border-radius: 4px;
+    font-family: "Iowan Old Style", Georgia, serif;
+  }
+  .leaflet-popup-content b {
+    display: block;
+    margin-bottom: 0.25em;
+  }
+  .leaflet-popup-content {
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  #config-banner {
+    position: absolute;
+    z-index: 1000;
+    top: 5.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: var(--paper);
+    padding: 0.7rem 1rem;
+    border-radius: 4px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.78rem;
+    max-width: 90vw;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Skåne <span>Live</span></h1>
+    <div id="status"><span class="dot"></span>ansluter…</div>
+  </header>
+  <div style="position: relative; height: 100%;">
+    <div id="map"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/protobufjs@7.2.6/dist/protobuf.min.js"></script>
+<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+// ============================================================
+// KONFIGURATION – ändra detta
+// ============================================================
+// URL:en till din Cloudflare Worker (se worker.js för hur du skapar den).
+// Workern proxar Trafiklabs data och löser CORS.
+const PROXY_URL = "https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev";
+
+// Din Worker svarar även på /routes för statisk linjedata (färger m.m.)
+const ROUTES_URL = `${PROXY_URL}/routes`;
+
+// Hur ofta kartan ska uppdateras (millisekunder). Trafiklab uppdaterar
+// positioner ca var 2:a sekund, men var snäll mot API:et — 5-10s räcker.
+const POLL_INTERVAL_MS = 7000;
+
+// Ungefärlig mittpunkt över Skåne
+const MAP_CENTER = [55.99, 13.45];
+const MAP_ZOOM = 9;
+
+// ============================================================
+// Minimal GTFS-Realtime protobuf-schema (bara det vi behöver: VehiclePositions)
+// ============================================================
+const GTFS_RT_PROTO = `
+syntax = "proto2";
+package transit_realtime;
+
+message FeedMessage {
+  required FeedHeader header = 1;
+  repeated FeedEntity entity = 2;
+}
+
+message FeedHeader {
+  required string gtfs_realtime_version = 1;
+  optional uint64 timestamp = 3;
+}
+
+message FeedEntity {
+  required string id = 1;
+  optional VehiclePosition vehicle = 4;
+}
+
+message VehiclePosition {
+  optional TripDescriptor trip = 1;
+  optional VehicleDescriptor vehicle = 8;
+  optional Position position = 2;
+  optional uint64 timestamp = 5;
+}
+
+message TripDescriptor {
+  optional string trip_id = 1;
+  optional string route_id = 5;
+}
+
+message VehicleDescriptor {
+  optional string id = 1;
+  optional string label = 2;
+}
+
+message Position {
+  required float latitude = 1;
+  required float longitude = 2;
+  optional float bearing = 3;
+  optional float speed = 5;
+}
+`;
+
+// ============================================================
+// Karta
+// ============================================================
+const map = L.map("map", { zoomControl: true }).setView(MAP_CENTER, MAP_ZOOM);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare',
+}).addTo(map);
+
+const statusEl = document.getElementById("status");
+function setStatus(state, text) {
+  statusEl.className = state;
+  statusEl.innerHTML = `<span class="dot"></span>${text}`;
+}
+
+if (PROXY_URL.includes("ditt-worker-namn")) {
+  const banner = document.createElement("div");
+  banner.id = "config-banner";
+  banner.textContent = "⚠ Sätt PROXY_URL i index.html till din egen Cloudflare Worker-URL (se worker.js)";
+  document.querySelector("#app > div").appendChild(banner);
+}
+
+// ============================================================
+// Fordonsmarkörer
+// ============================================================
+const markers = new Map(); // vehicle id -> L.Marker
+
+// route_id -> { color, textColor, shortName }, fylls av loadRouteColors()
+const routesById = new Map();
+// trip_id -> route_id, fylls av loadRouteColors() (realtidsflödet skickar bara trip_id)
+const routeIdByTripId = new Map();
+
+function makeIcon(routeInfo) {
+  const hasColor = routeInfo && routeInfo.color;
+  const bg = hasColor ? `#${routeInfo.color}` : null;
+  const fg = routeInfo && routeInfo.textColor ? `#${routeInfo.textColor}` : "#eef1ec";
+  const label = routeInfo && routeInfo.shortName ? routeInfo.shortName : "";
+  const style = bg ? `background:${bg};color:${fg};` : "";
+  const cls = hasColor ? "" : "unknown";
+
+  return L.divIcon({
+    className: "",
+    html: `<div class="vehicle-icon ${cls}" style="${style}">${label}</div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
+
+function updateVehicles(entities) {
+  const seenIds = new Set();
+
+  for (const entity of entities) {
+    const vp = entity.vehicle;
+    if (!vp || !vp.position) continue;
+
+    const id = (vp.vehicle && (vp.vehicle.id || vp.vehicle.label)) || entity.id;
+    seenIds.add(id);
+
+    const lat = vp.position.latitude;
+    const lon = vp.position.longitude;
+    const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
+    let routeId = vp.trip && vp.trip.routeId ? vp.trip.routeId : "";
+    if (!routeId && tripId) {
+      routeId = routeIdByTripId.get(tripId) || "";
+    }
+    const routeInfo = routesById.get(routeId);
+    const displayName = (routeInfo && routeInfo.shortName) || routeId || "okänd";
+
+    const popupHtml = `
+      <b>Linje ${displayName}</b>
+      Fordon: ${id}<br>
+      Hastighet: ${vp.position.speed != null ? Math.round(vp.position.speed * 3.6) + " km/h" : "okänd"}
+    `;
+
+    if (markers.has(id)) {
+      const marker = markers.get(id);
+      marker.setLatLng([lat, lon]);
+      marker.setIcon(makeIcon(routeInfo));
+      marker.setPopupContent(popupHtml);
+    } else {
+      const marker = L.marker([lat, lon], { icon: makeIcon(routeInfo) })
+        .addTo(map)
+        .bindPopup(popupHtml);
+      markers.set(id, marker);
+    }
+  }
+
+  // Ta bort fordon som inte längre finns i flödet
+  for (const [id, marker] of markers.entries()) {
+    if (!seenIds.has(id)) {
+      map.removeLayer(marker);
+      markers.delete(id);
+    }
+  }
+}
+
+// ============================================================
+// Hämta och tolka protobuf-data
+// ============================================================
+let FeedMessageType = null;
+
+async function loadProtoSchema() {
+  const root = protobuf.parse(GTFS_RT_PROTO).root;
+  FeedMessageType = root.lookupType("transit_realtime.FeedMessage");
+}
+
+// ============================================================
+// Statisk linjedata (färger) – hämtas en gång vid start
+// ============================================================
+async function loadRouteColors() {
+  try {
+    const res = await fetch(ROUTES_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const zipBuffer = await res.arrayBuffer();
+
+    const zip = await JSZip.loadAsync(zipBuffer);
+    const routesFile = zip.file("routes.txt");
+    if (!routesFile) throw new Error("routes.txt saknas i zip-filen");
+
+    const csvText = await routesFile.async("string");
+    const parsed = Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
+    });
+
+    for (const row of parsed.data) {
+      const id = (row.route_id || "").trim();
+      if (!id) continue;
+      routesById.set(id, {
+        color: (row.route_color || "").trim(),
+        textColor: (row.route_text_color || "").trim(),
+        shortName: (row.route_short_name || "").trim(),
+      });
+    }
+    console.log(`Laddade färger för ${routesById.size} linjer`);
+
+    // Realtidsflödet skickar bara trip_id, inte route_id direkt — vi behöver
+    // trips.txt för att slå upp vilken linje varje resa (trip) tillhör.
+    const tripsFile = zip.file("trips.txt");
+    if (tripsFile) {
+      const tripsText = await tripsFile.async("string");
+      const parsedTrips = Papa.parse(tripsText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
+      });
+      for (const row of parsedTrips.data) {
+        const tripId = (row.trip_id || "").trim();
+        const routeId = (row.route_id || "").trim();
+        if (tripId && routeId) routeIdByTripId.set(tripId, routeId);
+      }
+      console.log(`Laddade linjekoppling för ${routeIdByTripId.size} resor (trips)`);
+    }
+  } catch (err) {
+    // Kartan funkar ändå, fordonen visas bara i en enfärgad standardfärg.
+    console.warn("Kunde inte ladda linjefärger:", err);
+  }
+}
+
+async function fetchVehiclePositions() {
+  const res = await fetch(PROXY_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const buffer = new Uint8Array(await res.arrayBuffer());
+  const message = FeedMessageType.decode(buffer);
+  const obj = FeedMessageType.toObject(message, { defaults: true });
+  const entities = obj.entity || [];
+
+  if (!fetchVehiclePositions.loggedSample && entities.length > 0) {
+    fetchVehiclePositions.loggedSample = true;
+    const sample = entities.find((e) => e.vehicle && e.vehicle.trip);
+    if (sample) {
+      console.log("Exempel trip_id/route_id från fordonsflödet:", sample.vehicle.trip.tripId, sample.vehicle.trip.routeId);
+    }
+  }
+
+  return entities;
+}
+
+async function pollLoop() {
+  try {
+    const entities = await fetchVehiclePositions();
+    updateVehicles(entities);
+    const count = markers.size;
+    setStatus("live", `live · ${count} fordon · uppdaterad ${new Date().toLocaleTimeString("sv-SE")}`);
+  } catch (err) {
+    console.error(err);
+    setStatus("error", `kunde inte hämta data (${err.message})`);
+  } finally {
+    setTimeout(pollLoop, POLL_INTERVAL_MS);
+  }
+}
+
+(async function init() {
+  await loadProtoSchema();
+  await loadRouteColors(); // hämtas en gång; kartan väntar in detta så första ritningen får rätt färger
+  pollLoop();
+})();
+</script>
+</body>
+</html>
