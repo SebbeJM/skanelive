@@ -386,6 +386,11 @@ function applyDarkTheme() {
           map.setPaintProperty(id, "line-color", "#1a1a1a");
         } else if (id.includes("boundary")) {
           map.setPaintProperty(id, "line-color", "#3a3a3a");
+        } else if (id.includes("rail")) {
+          // Järnvägsspår från OpenStreetMap (oberoende av Trafiklabs data) —
+          // egen färg så de syns tydligt, eftersom vi saknar Skånetrafikens
+          // egna tåglinjer helt.
+          map.setPaintProperty(id, "line-color", "#8a7fd6");
         } else {
           map.setPaintProperty(id, "line-color", "#333333");
         }
@@ -1190,6 +1195,14 @@ window.checkVrOperator = async function () {
     transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
   });
   console.log(`vr-operatören har totalt ${parsed.data.length} linjer.`);
+  console.log(
+    "Alla 10 linjer:",
+    parsed.data.map((r) => ({
+      short: r.route_short_name,
+      long: r.route_long_name,
+      type: r.route_type,
+    }))
+  );
   const trains = parsed.data.filter((row) => {
     const n = `${row.route_short_name || ""} ${row.route_long_name || ""}`.toLowerCase();
     return n.includes("pågatåg") || n.includes("öresundståg");
