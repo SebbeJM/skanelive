@@ -34,12 +34,20 @@
 
   header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 1.25rem;
     padding: 0.9rem 1.25rem;
     border-bottom: 1px solid var(--line);
     background: var(--panel);
+  }
+
+  .header-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   header h1 {
@@ -50,10 +58,11 @@
   }
 
   .subtitle {
-    margin: 0.15rem 0 0;
+    margin: 0;
     font-size: 0.78rem;
     color: var(--muted);
     font-style: italic;
+    white-space: nowrap;
   }
 
   header h1 span {
@@ -109,16 +118,19 @@
   /* Liten, subtil vibration ovanpå den mjuka rörelsen — ger lite "liv" åt
      fordonen (à la SL Live) utan att röra den faktiska positionslogiken.
      Ligger på den INRE ikonen, inte den positionerade markören, så den
-     stör inte glidningen ovan. */
+     stör inte glidningen ovan. Aktiveras BARA när fordonet faktiskt rör
+     sig (se .moving-klassen, satt utifrån rapporterad hastighet i JS).
+     animation-delay sätts slumpmässigt per fordon inline i JS, så alla
+     inte skakar exakt i takt. */
   @keyframes vehicle-jitter {
     0%   { transform: translate(0, 0); }
-    20%  { transform: translate(0.6px, -0.4px); }
-    40%  { transform: translate(-0.5px, 0.5px); }
-    60%  { transform: translate(0.4px, 0.6px); }
-    80%  { transform: translate(-0.6px, -0.3px); }
+    20%  { transform: translate(0.35px, -0.25px); }
+    40%  { transform: translate(-0.3px, 0.3px); }
+    60%  { transform: translate(0.25px, 0.35px); }
+    80%  { transform: translate(-0.35px, -0.2px); }
     100% { transform: translate(0, 0); }
   }
-  .vehicle-icon {
+  .vehicle-icon.moving {
     animation: vehicle-jitter 0.9s steps(5) infinite;
   }
 
@@ -200,51 +212,54 @@
     max-width: 90vw;
   }
 
-  #legend {
-    position: absolute;
-    z-index: 900;
-    bottom: 1rem;
-    left: 1rem;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 0.6rem 0.8rem;
-    font-size: 0.78rem;
-    line-height: 1.6;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-  }
-  #legend .legend-row {
+  #legend-inline {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 1rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+    min-width: 0;
+  }
+  #legend-inline .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
     white-space: nowrap;
   }
-  #legend .legend-dot {
-    width: 11px;
-    height: 11px;
+  #legend-inline .legend-dot {
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     border: 2px solid #ffffff;
     flex-shrink: 0;
+  }
+
+  /* På smala skärmar döljs undertext + färgförklaring i stället för att
+     radbryta — headern ska aldrig bli högre eller lägre. */
+  @media (max-width: 700px) {
+    .subtitle, #legend-inline {
+      display: none;
+    }
   }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <div>
+    <div class="header-title">
       <h1><span class="title-skane">Skåne</span> <span class="title-live">Live</span></h1>
       <p class="subtitle">Live-data över kollektivtrafiken i Skåne Län</p>
+    </div>
+    <div id="legend-inline">
+      <div class="legend-row"><span class="legend-dot" style="background:#2e7d32"></span>Stadsbuss</div>
+      <div class="legend-row"><span class="legend-dot" style="background:#f9a825"></span>Regionbuss</div>
+      <div class="legend-row"><span class="legend-dot" style="background:#645fa2"></span>Pågatåg</div>
+      <div class="legend-row"><span class="legend-dot" style="background:#a3a9ad"></span>Öresundståg</div>
     </div>
     <div id="status"><span class="dot"></span>ansluter…</div>
   </header>
   <div style="position: relative; height: 100%;">
     <div id="map"></div>
-    <div id="legend">
-      <div class="legend-row"><span class="legend-dot" style="background:#2e7d32"></span> Stadsbuss</div>
-      <div class="legend-row"><span class="legend-dot" style="background:#f9a825"></span> Regionbuss</div>
-      <div class="legend-row"><span class="legend-dot" style="background:#645fa2"></span> Pågatåg</div>
-      <div class="legend-row"><span class="legend-dot" style="background:#a3a9ad"></span> Öresundståg</div>
-    </div>
   </div>
 </div>
 
@@ -373,7 +388,7 @@ map.on("moveend", () => mapContainer.classList.remove("map-moving"));
 map.on("zoomend", () => {
   for (const entry of markers.values()) {
     applyMarkerClasses(entry.el, entry.routeInfo);
-    entry.el.innerHTML = iconHtml(entry.routeInfo);
+    entry.el.innerHTML = iconHtml(entry.routeInfo, entry.moving);
   }
 });
 
@@ -722,15 +737,18 @@ function lineLabelFor(routeInfo, displayName) {
   return `Linje ${displayName}`;
 }
 
-function iconHtml(routeInfo) {
+function iconHtml(routeInfo, moving) {
   const hasColor = routeInfo && routeInfo.color;
   const bg = hasColor ? `#${routeInfo.color}` : null;
   const fg = routeInfo && routeInfo.textColor ? `#${routeInfo.textColor}` : "#eef1ec";
   const label = routeInfo && routeInfo.shortName ? routeInfo.shortName : "";
   const size = iconSizeForZoom();
   const fontSize = Math.max(7, Math.round(size * 0.45));
-  const style = `${bg ? `background:${bg};color:${fg};` : ""}width:${size}px;height:${size}px;font-size:${fontSize}px;`;
-  const cls = hasColor ? "" : "unknown";
+  // Slumpad negativ animation-delay = ikonen "hoppar in" mitt i skak-cykeln,
+  // så olika fordon inte skakar exakt i takt med varandra.
+  const jitterDelay = moving ? `animation-delay:-${(Math.random() * 0.9).toFixed(2)}s;` : "";
+  const style = `${bg ? `background:${bg};color:${fg};` : ""}width:${size}px;height:${size}px;font-size:${fontSize}px;${jitterDelay}`;
+  const cls = `${hasColor ? "" : "unknown"} ${moving ? "moving" : ""}`.trim();
   const labelHtml = shouldShowLabels() ? `<span class="label">${label}</span>` : "";
   return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
 }
@@ -765,6 +783,9 @@ function updateVehicles(entities) {
     }
     const routeInfo = routesById.get(routeId);
     const displayName = (routeInfo && routeInfo.shortName) || routeId || "okänd";
+    // Bara "levande" skakning när fordonet faktiskt rör sig — inte när det
+    // står still (vid hållplats, i trafikstockning, etc.).
+    const isMoving = vp.position.speed != null && vp.position.speed > 0.5;
 
     // Dölj bara fordon där vi INTE ens har ett linjenummer att visa (skulle
     // bli bokstavligen "okänd linje"). Fordon med ett känt nummer (t.ex. "8",
@@ -787,7 +808,7 @@ function updateVehicles(entities) {
       </div>
     `;
 
-    const iconKey = `${(routeInfo && routeInfo.color) || ""}|${displayName}|${shouldShowLabels()}`;
+    const iconKey = `${(routeInfo && routeInfo.color) || ""}|${displayName}|${shouldShowLabels()}|${isMoving}`;
 
     if (markers.has(id)) {
       const entry = markers.get(id);
@@ -796,16 +817,17 @@ function updateVehicles(entities) {
       // annars aldrig hinner etableras.
       if (entry.iconKey !== iconKey) {
         applyMarkerClasses(entry.el, routeInfo);
-        entry.el.innerHTML = iconHtml(routeInfo);
+        entry.el.innerHTML = iconHtml(routeInfo, isMoving);
         entry.iconKey = iconKey;
       }
       entry.routeInfo = routeInfo;
+      entry.moving = isMoving;
       entry.marker.setLngLat([lon, lat]);
       entry.popup.setHTML(popupHtml);
     } else {
       const el = document.createElement("div");
       applyMarkerClasses(el, routeInfo);
-      el.innerHTML = iconHtml(routeInfo);
+      el.innerHTML = iconHtml(routeInfo, isMoving);
 
       const popup = new maplibregl.Popup({ offset: 14 }).setHTML(popupHtml);
       const marker = new maplibregl.Marker({ element: el, anchor: "center" })
@@ -813,7 +835,7 @@ function updateVehicles(entities) {
         .setPopup(popup)
         .addTo(map);
 
-      markers.set(id, { marker, el, popup, iconKey, routeInfo });
+      markers.set(id, { marker, el, popup, iconKey, routeInfo, moving: isMoving });
     }
   }
 
@@ -913,11 +935,6 @@ async function loadRouteColors() {
           shapeIdsByRoute.get(routeId).add(shapeId);
         }
       }
-      console.log(`Laddade destination (trip_headsign) för ${headsignByTripId.size} av ${parsedTrips.data.length} resor`);
-      if (parsedTrips.data.length > 0) {
-        console.log("Kolumner i trips.txt:", Object.keys(parsedTrips.data[0]));
-        console.log("Exempel-rader:", parsedTrips.data.slice(0, 5));
-      }
       console.log(`Laddade linjekoppling för ${routeIdByTripId.size} resor (trips)`);
     }
 
@@ -973,12 +990,14 @@ async function loadRouteColors() {
       if (info && isRailRouteType(info.routeType)) railTripIds.add(tripId);
     }
 
-    // stop_times.txt — behövs bara för att veta VILKA hållplatser som
-    // faktiskt trafikeras av tåg (railStopIds), samt för att avgöra
-    // Öresundståg vs Pågatåg geografiskt. Ingen tidtabell sparas längre,
-    // eftersom vi nu har riktiga fordonspositioner för tåg direkt.
+    // stop_times.txt läses nu för ALLA resor (inte bara tåg), av två skäl:
+    // 1) veta vilka hållplatser som trafikeras av tåg (railStopIds) och
+    //    avgöra Öresundståg vs Pågatåg geografiskt (som innan).
+    // 2) trip_headsign (destinationstext) saknas helt i Skånetrafikens data
+    //    (bekräftat: 0 av 47 951 resor), så vi gissar i stället destinationen
+    //    genom att ta sista hållplatsen i varje resas tidtabell.
     const stopTimesFile = zip.file("stop_times.txt");
-    if (stopTimesFile && railTripIds.size > 0) {
+    if (stopTimesFile) {
       const stopTimesText = await stopTimesFile.async("string");
       const parsedStopTimes = Papa.parse(stopTimesText, {
         header: true,
@@ -987,11 +1006,23 @@ async function loadRouteColors() {
       });
       // route_id -> Set(stop_id), byggs tillfälligt för Öresundståg-koll nedan.
       const stopIdsByRoute = new Map();
+      // trip_id -> { seq, stopId }, håller reda på den HÖGSTA stop_sequence
+      // vi sett för varje resa hittills = sista hållplatsen.
+      const lastStopByTripId = new Map();
+
       for (const row of parsedStopTimes.data) {
         const tripId = (row.trip_id || "").trim();
-        if (!railTripIds.has(tripId)) continue; // hoppa över alla busstopp direkt
         const stopId = (row.stop_id || "").trim();
-        if (!stopId) continue;
+        if (!tripId || !stopId) continue;
+
+        const seq = parseInt(row.stop_sequence, 10);
+        const seqNum = Number.isNaN(seq) ? 0 : seq;
+        const existing = lastStopByTripId.get(tripId);
+        if (!existing || seqNum > existing.seq) {
+          lastStopByTripId.set(tripId, { seq: seqNum, stopId });
+        }
+
+        if (!railTripIds.has(tripId)) continue; // resten är bara för tåg
         railStopIds.add(stopId);
 
         const routeId = routeIdByTripId.get(tripId);
@@ -999,6 +1030,13 @@ async function loadRouteColors() {
         if (!stopIdsByRoute.has(routeId)) stopIdsByRoute.set(routeId, new Set());
         stopIdsByRoute.get(routeId).add(stopId);
       }
+
+      for (const [tripId, last] of lastStopByTripId) {
+        if (headsignByTripId.has(tripId)) continue; // redan en äkta destination, rör inte den
+        const s = stopsById.get(last.stopId);
+        if (s && s.name) headsignByTripId.set(tripId, s.name);
+      }
+      console.log(`Gissade destination (sista hållplatsen) för ${headsignByTripId.size} av ${lastStopByTripId.size} resor`);
       console.log(`Hittade ${railStopIds.size} hållplatser som trafikeras av tåg`);
 
       // Öresundståg kör över bron till Danmark, Pågatåg gör aldrig det —
