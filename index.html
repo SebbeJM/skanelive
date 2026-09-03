@@ -89,15 +89,30 @@
 
   /* Fordonsmarkörer */
   .vehicle-marker {
-    /* Korta, "hackiga" hopp mellan varje delposition, i stället för en enda
-       lång mjuk glidning — ger samma levande känsla som SL Live, även med
-       samma pollningsintervall som innan (se hopTick() i JS). */
-    transition: transform 0.6s ease-out;
+    /* Glider mjukt till ny position mellan varje datauppdatering, längs
+       hela vägen — ingen "stanna-gå"-känsla. */
+    transition: transform 6.5s linear;
   }
   /* Stäng av glidningen medan kartan pannas/zoomas, annars "flyter" alla
      markörer konstigt när man interagerar med kartan. */
   #map.map-moving .vehicle-marker {
     transition: none !important;
+  }
+
+  /* Liten, subtil vibration ovanpå den mjuka rörelsen — ger lite "liv" åt
+     fordonen (à la SL Live) utan att röra den faktiska positionslogiken.
+     Ligger på den INRE ikonen, inte den positionerade markören, så den
+     stör inte glidningen ovan. */
+  @keyframes vehicle-jitter {
+    0%   { transform: translate(0, 0); }
+    20%  { transform: translate(0.6px, -0.4px); }
+    40%  { transform: translate(-0.5px, 0.5px); }
+    60%  { transform: translate(0.4px, 0.6px); }
+    80%  { transform: translate(-0.6px, -0.3px); }
+    100% { transform: translate(0, 0); }
+  }
+  .vehicle-icon {
+    animation: vehicle-jitter 0.9s steps(5) infinite;
   }
 
   .vehicle-icon {
@@ -775,13 +790,7 @@ function updateVehicles(entities) {
         entry.iconKey = iconKey;
       }
       entry.routeInfo = routeInfo;
-      // Spara "från" (senaste hoppositionen) och "till" (den nya riktiga
-      // positionen) i stället för att hoppa dit direkt — hopTick() sköter
-      // sedan de mellanliggande hoppen. Detta är vad som ger den "hackiga"
-      // SL Live-känslan i stället för en enda lång mjuk glidning.
-      entry.fromLngLat = entry.marker.getLngLat();
-      entry.toLngLat = { lng: lon, lat: lat };
-      entry.hopStart = Date.now();
+      entry.marker.setLngLat([lon, lat]);
       entry.popup.setHTML(popupHtml);
     } else {
       const el = document.createElement("div");
@@ -794,12 +803,7 @@ function updateVehicles(entities) {
         .setPopup(popup)
         .addTo(map);
 
-      markers.set(id, {
-        marker, el, popup, iconKey, routeInfo,
-        fromLngLat: { lng: lon, lat: lat },
-        toLngLat: { lng: lon, lat: lat },
-        hopStart: Date.now(),
-      });
+      markers.set(id, { marker, el, popup, iconKey, routeInfo });
     }
   }
 
@@ -1058,22 +1062,6 @@ async function fetchVehiclePositions() {
   return entities;
 }
 
-// Hur ofta delpositionerna räknas om mellan varje riktig datauppdatering —
-// ger den "hackiga" känslan (flera korta hopp) i stället för en lång
-// kontinuerlig glidning, även fast vi bara har riktig data var 7:e sekund.
-const HOP_INTERVAL_MS = 1500;
-
-function hopTick() {
-  const now = Date.now();
-  for (const entry of markers.values()) {
-    if (!entry.toLngLat || !entry.fromLngLat) continue;
-    const frac = Math.min(1, (now - entry.hopStart) / POLL_INTERVAL_MS);
-    const lat = entry.fromLngLat.lat + (entry.toLngLat.lat - entry.fromLngLat.lat) * frac;
-    const lng = entry.fromLngLat.lng + (entry.toLngLat.lng - entry.fromLngLat.lng) * frac;
-    entry.marker.setLngLat([lng, lat]);
-  }
-}
-
 async function pollLoop() {
   try {
     const entities = await fetchVehiclePositions();
@@ -1273,7 +1261,6 @@ async function updateResRobotDepartures() {
   await loadRouteColors(); // hämtas en gång; kartan väntar in detta så första ritningen får rätt färger
   drawAllRailLines();
   drawRealTrainStations();
-  setInterval(hopTick, HOP_INTERVAL_MS);
   pollLoop();
 
   // ResRobot-avgångar uppdateras separat och mycket glesare (var 90:e sekund)
