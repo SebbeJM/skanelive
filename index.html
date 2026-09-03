@@ -464,10 +464,21 @@ if (PROXY_URL.includes("ditt-worker-namn")) {
 // stadsbussar = 1–2 siffror (grön), regionbussar = 3 siffror (gul),
 // Pågatåg = lila, Öresundståg = silvergrå. Returnerar null om inget mönster
 // känns igen, så att den slumpmässiga fallback-färgen används istället.
-function classifyColorForRoute(shortName, longName) {
+// Avgör om en route_type-siffra betyder järnväg. Skånetrafikens data
+// använder "Extended GTFS route types" (100–199 = järnväg, mer detaljerat
+// system) i stället för standard-GTFS enkla "2" — vi kollar båda.
+function isRailRouteType(routeType) {
+  const n = parseInt(routeType, 10);
+  if (Number.isNaN(n)) return false;
+  return n === 2 || (n >= 100 && n < 200);
+}
+
+function classifyColorForRoute(shortName, longName, routeType) {
   const name = `${shortName} ${longName || ""}`.toLowerCase();
+  if (name.includes("öresundståg")) return "a3a9ad"; // silvergrå
+
+  if (isRailRouteType(routeType)) return "645fa2"; // lila — järnväg (Pågatåg m.fl.)
   if (name.includes("pågatåg")) return "645fa2";
-  if (name.includes("öresundståg")) return "a3a9ad";
 
   const trimmed = (shortName || "").trim();
   if (/^\d+$/.test(trimmed)) {
@@ -697,7 +708,7 @@ function ensureRouteShapeDrawn(routeId, routeInfo) {
   if (!routeId || drawnRouteShapes.has(routeId)) return;
   drawnRouteShapes.add(routeId); // markera oavsett, så vi inte kollar om och om igen
 
-  if (!routeInfo || routeInfo.routeType !== "2") return;
+  if (!routeInfo || !isRailRouteType(routeInfo.routeType)) return;
 
   const shapeIds = shapeIdsByRoute.get(routeId);
   if (!shapeIds) return;
@@ -766,7 +777,7 @@ function iconHtml(routeInfo) {
 }
 
 function markerClassName(routeInfo) {
-  return `vehicle-marker${routeInfo && routeInfo.routeType === "2" ? " rail" : ""}`;
+  return `vehicle-marker${routeInfo && isRailRouteType(routeInfo.routeType) ? " rail" : ""}`;
 }
 
 // Uppdaterar bara VÅRA egna klasser (vehicle-marker/rail) via classList,
@@ -774,7 +785,7 @@ function markerClassName(routeInfo) {
 // radera en intern klass MapLibre själv satt på elementet för positionering.
 function applyMarkerClasses(el, routeInfo) {
   el.classList.add("vehicle-marker");
-  el.classList.toggle("rail", Boolean(routeInfo && routeInfo.routeType === "2"));
+  el.classList.toggle("rail", Boolean(routeInfo && isRailRouteType(routeInfo.routeType)));
 }
 
 function updateVehicles(entities) {
@@ -963,7 +974,7 @@ async function loadRouteColors() {
       const routeType = (row.route_type || "").trim();
       const officialColor = (row.route_color || "").trim();
       const manualColor = MANUAL_ROUTE_COLORS[shortName];
-      const heuristicColor = classifyColorForRoute(shortName, longName);
+      const heuristicColor = classifyColorForRoute(shortName, longName, routeType);
       routesById.set(id, {
         color: manualColor || officialColor || heuristicColor || fallbackColorForRoute(id),
         textColor: (row.route_text_color || "").trim(),
@@ -973,8 +984,8 @@ async function loadRouteColors() {
       });
     }
     console.log(`Laddade färger för ${routesById.size} linjer`);
-    const railRoutes = [...routesById.values()].filter((r) => r.routeType === "2");
-    console.log(`Varav ${railRoutes.length} järnvägslinjer (route_type=2):`, railRoutes.map((r) => r.shortName));
+    const railRoutes = [...routesById.values()].filter((r) => isRailRouteType(r.routeType));
+    console.log(`Varav ${railRoutes.length} järnvägslinjer (route_type 2 eller 100–199):`, railRoutes.map((r) => `${r.shortName} (typ ${r.routeType})`));
     // Extra kontroll: sök på NAMN oavsett route_type, ifall Pågatåg/Öresundståg
     // finns med i datan men är felmärkta med en annan route_type-siffra.
     const trainsByName = parsed.data.filter((row) => {
@@ -1064,7 +1075,7 @@ async function loadRouteColors() {
     const railTripIds = new Set();
     for (const [tripId, rId] of routeIdByTripId) {
       const info = routesById.get(rId);
-      if (info && info.routeType === "2") railTripIds.add(tripId);
+      if (info && isRailRouteType(info.routeType)) railTripIds.add(tripId);
     }
 
     const stopTimesFile = zip.file("stop_times.txt");
@@ -1183,7 +1194,7 @@ function whenMapLoaded() {
 // aktivt på just den sträckan.
 function drawAllRailLines() {
   for (const [routeId, routeInfo] of routesById) {
-    if (routeInfo.routeType === "2") {
+    if (isRailRouteType(routeInfo.routeType)) {
       ensureRouteShapeDrawn(routeId, routeInfo);
     }
   }
