@@ -903,6 +903,11 @@ async function loadRouteColors() {
           shapeIdsByRoute.get(routeId).add(shapeId);
         }
       }
+      console.log(`Laddade destination (trip_headsign) för ${headsignByTripId.size} av ${parsedTrips.data.length} resor`);
+      if (parsedTrips.data.length > 0) {
+        console.log("Kolumner i trips.txt:", Object.keys(parsedTrips.data[0]));
+        console.log("Exempel-rader:", parsedTrips.data.slice(0, 5));
+      }
       console.log(`Laddade linjekoppling för ${routeIdByTripId.size} resor (trips)`);
     }
 
