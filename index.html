@@ -120,14 +120,11 @@
     transition: none !important;
   }
 
-  /* Låt popup-rutan glida i takt med sin markör, i stället för att hoppa
-     direkt till slutpositionen medan ikonen fortfarande glider dit. Den
-     faktiska tiden sätts per fordon i JS (samma värde som markörens). */
+  /* Popup-rutan tonas bara in/ut på plats — ingen positionsglidning
+     (den skulle annars "flyga in" från en tidigare/startposition varje
+     gång rutan öppnas första gången). Opaciteten hanteras i JS. */
   .maplibregl-popup {
-    transition: transform 6.5s linear;
-  }
-  #map.map-moving .maplibregl-popup {
-    transition: none !important;
+    transition: opacity 0.18s ease;
   }
 
   /* Liten, subtil vibration ovanpå den mjuka rörelsen — ger lite "liv" åt
@@ -775,6 +772,33 @@ function iconHtml(routeInfo, moving) {
   return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
 }
 
+// Visar/döljer en popup-ruta med en ren fade — ingen positionsanimation,
+// den dyker bara upp/försvinner på plats. Elementet skapas lazy av
+// MapLibre först vid addTo(), så vi väntar en frame innan vi sätter
+// opacity:1 för att CSS-transitionen faktiskt ska hinna trigga.
+function showPopup(popup, marker) {
+  popup.setLngLat(marker.getLngLat());
+  popup.addTo(map);
+  const el = popup.getElement();
+  if (!el) return;
+  el.style.opacity = "0";
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      el.style.opacity = "1";
+    });
+  });
+}
+
+function hidePopup(popup) {
+  const el = popup.getElement();
+  if (!el) {
+    popup.remove();
+    return;
+  }
+  el.style.opacity = "0";
+  setTimeout(() => popup.remove(), 180);
+}
+
 function markerClassName(routeInfo) {
   return `vehicle-marker${routeInfo && isRailRouteType(routeInfo.routeType) ? " rail" : ""}`;
 }
@@ -852,15 +876,11 @@ function updateVehicles(entities) {
       const elapsed = entry.lastUpdateTime ? now - entry.lastUpdateTime : POLL_INTERVAL_MS;
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
       entry.el.style.transitionDuration = `${clamped}ms`;
-      // Samma glidningstid på popup-rutan, så den följer med ikonen i
-      // stället för att hoppa direkt till slutpositionen.
-      try {
-        const popupEl = entry.popup.getElement();
-        if (popupEl) popupEl.style.transitionDuration = `${clamped}ms`;
-      } catch (err) {
-        // Popup-elementet finns inte skapat än (aldrig öppnad) — ofarligt.
-      }
       entry.lastUpdateTime = now;
+      // Om popup-rutan är öppen (t.ex. fastnålad via klick) håller vi den
+      // positionerad rätt över fordonet — ingen glidningsanimation här,
+      // den hoppar bara direkt dit (fade-in/ut hanterar det visuella).
+      if (entry.popup.isOpen()) entry.popup.setLngLat([lon, lat]);
       entry.marker.setLngLat([lon, lat]);
       entry.popup.setHTML(popupHtml);
     } else {
@@ -887,20 +907,21 @@ function updateVehicles(entities) {
       markers.set(id, newEntry);
 
       // Hovra = visa rutan tillfälligt. Klicka = "nåla fast" den (stannar
-      // kvar tills man klickar på fordonet igen).
+      // kvar tills man klickar på fordonet igen). Tonas in/ut på plats,
+      // ingen positionsanimation vid öppning.
       el.addEventListener("mouseenter", () => {
-        if (!popup.isOpen()) popup.setLngLat(marker.getLngLat()).addTo(map);
+        if (!popup.isOpen()) showPopup(popup, marker);
       });
       el.addEventListener("mouseleave", () => {
-        if (!newEntry.pinned) popup.remove();
+        if (!newEntry.pinned) hidePopup(popup);
       });
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         newEntry.pinned = !newEntry.pinned;
         if (newEntry.pinned) {
-          popup.setLngLat(marker.getLngLat()).addTo(map);
+          showPopup(popup, marker);
         } else {
-          popup.remove();
+          hidePopup(popup);
         }
       });
     }
