@@ -204,8 +204,15 @@
     margin-bottom: 0.25em;
   }
   .popup-content {
+    position: relative;
+    padding-right: 1.1rem;
     font-size: 0.85rem;
     line-height: 1.4;
+  }
+  .popup-pin {
+    position: absolute;
+    top: 0;
+    right: 0;
   }
 
   #config-banner {
@@ -411,6 +418,7 @@ map.on("click", () => {
   for (const entry of markers.values()) {
     if (entry.pinned) {
       entry.pinned = false;
+      entry.popup.setHTML(renderPopupHtml(entry.popupBaseHtml, false));
       hidePopup(entry.popup);
     }
   }
@@ -765,6 +773,18 @@ function iconSizeForZoom() {
   return Math.round(minSize + (maxSize - minSize) * t);
 }
 
+// Liten vit "knappnål"-ikon som visas i hörnet av en popup-ruta när den
+// är fastnålad (klickad öppen), så det syns tydligt att den inte kommer
+// försvinna av sig själv.
+const PIN_ICON_SVG = `<span class="popup-pin"><svg viewBox="0 0 24 24" width="11" height="11" fill="#ffffff"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg></span>`;
+
+// Bygger den slutgiltiga popup-HTML:n genom att lägga till/ta bort
+// pin-ikonen ovanpå det vanliga innehållet, utan att behöva bygga om
+// resten av rutan (linje, destination, hastighet).
+function renderPopupHtml(baseHtml, pinned) {
+  return pinned ? baseHtml.replace("<div class=\"popup-content\">", `<div class="popup-content">${PIN_ICON_SVG}`) : baseHtml;
+}
+
 // Skriver rätt etikett i popup-rutan: "Pågatåg X" / "Öresundståg X" för
 // tåg, annars vanliga "Linje X" för bussar/spårvagnar.
 function lineLabelFor(routeInfo, displayName) {
@@ -894,12 +914,13 @@ function updateVehicles(entities) {
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
       entry.el.style.transitionDuration = `${clamped}ms`;
       entry.lastUpdateTime = now;
+      entry.popupBaseHtml = popupHtml;
       // Om popup-rutan är öppen (t.ex. fastnålad via klick) håller vi den
       // positionerad rätt över fordonet — ingen glidningsanimation här,
       // den hoppar bara direkt dit (fade-in/ut hanterar det visuella).
       if (entry.popup.isOpen()) entry.popup.setLngLat([lon, lat]);
       entry.marker.setLngLat([lon, lat]);
-      entry.popup.setHTML(popupHtml);
+      entry.popup.setHTML(renderPopupHtml(popupHtml, entry.pinned));
     } else {
       const el = document.createElement("div");
       applyMarkerClasses(el, routeInfo);
@@ -923,7 +944,7 @@ function updateVehicles(entities) {
       // hanterat klick-för-att-visa, vilket skulle krocka med vår egen
       // hover-/klicklogik nedan. Vi styr popup-rutan helt själva i stället.
 
-      const newEntry = { marker, el, popup, iconKey, routeInfo, moving: isMoving, lastUpdateTime: Date.now(), pinned: false };
+      const newEntry = { marker, el, popup, iconKey, routeInfo, moving: isMoving, lastUpdateTime: Date.now(), pinned: false, popupBaseHtml: popupHtml };
       markers.set(id, newEntry);
 
       // Hovra = visa rutan tillfälligt. Klicka = "nåla fast" den (stannar
@@ -938,6 +959,7 @@ function updateVehicles(entities) {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         newEntry.pinned = !newEntry.pinned;
+        popup.setHTML(renderPopupHtml(newEntry.popupBaseHtml, newEntry.pinned));
         if (newEntry.pinned) {
           showPopup(popup, marker);
         } else {
