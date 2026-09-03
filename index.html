@@ -505,7 +505,11 @@ function applyDarkTheme() {
           // världens järnvägar lila (samma kartlager täcker allt som är
           // synligt, inte bara Skåne). Se highlightSkaneRailLines() nedan
           // för hur vi begränsar den lila färgen till bara Skåne.
-          map.setPaintProperty(id, "line-color", "#414758");
+          // Mörkare än Cartos "minor road"-nyans (som är ganska ljus,
+          // rgba(65,71,88,1)) eftersom Carto lägger en mörk kant UNDER
+          // den ljusare fyllningen — vi har bara en enda flat färg per
+          // väglager, så vi mörklägger den för att efterlikna helhetsintrycket.
+          map.setPaintProperty(id, "line-color", "#1c1f26");
         }
       } else if (type === "symbol") {
         if (layer.paint && layer.paint["text-color"] !== undefined) {
@@ -814,16 +818,19 @@ function iconHtml(routeInfo, moving) {
 // MapLibre först vid addTo(), så vi väntar en frame innan vi sätter
 // opacity:1 för att CSS-transitionen faktiskt ska hinna trigga.
 function showPopup(popup, marker) {
+  const alreadyOpen = popup.isOpen();
   popup.setLngLat(marker.getLngLat());
-  popup.addTo(map);
-  const el = popup.getElement();
-  if (!el) return;
-  el.style.opacity = "0";
-  requestAnimationFrame(() => {
+  if (!alreadyOpen) {
+    popup.addTo(map);
+    const el = popup.getElement();
+    if (!el) return;
+    el.style.opacity = "0";
     requestAnimationFrame(() => {
-      el.style.opacity = "1";
+      requestAnimationFrame(() => {
+        el.style.opacity = "1";
+      });
     });
-  });
+  }
 }
 
 function hidePopup(popup) {
@@ -931,12 +938,6 @@ function updateVehicles(entities) {
       // med vår egen fastnålningslogik och stänga rutan direkt igen).
       const popup = new maplibregl.Popup({ offset: 14, closeOnClick: false });
       popup.setHTML(popupHtml);
-      // Om rutan stängs av något annat skäl (t.ex. MapLibres inbyggda
-      // "klick utanför kartan stänger popupen"), återställ vårt eget
-      // "fastnålad"-läge så hover fortsätter fungera korrekt efteråt.
-      popup.on("close", () => {
-        newEntry.pinned = false;
-      });
       const marker = new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat([lon, lat])
         .addTo(map);
