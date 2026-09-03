@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <style>
   :root {
-    --bg: #0a0a0a;
+    --bg: #0e0e0e;
     --panel: #0d0d0d;
     --line: #262626;
     --fg: #e7ece8;
@@ -404,6 +404,18 @@ map.on("zoomend", () => {
   }
 });
 
+// Klick på kartan (inte på ett fordon — de stoppar sin egen klickhändelse
+// från att nå hit via e.stopPropagation()) stänger alla fastnålade
+// popup-rutor.
+map.on("click", () => {
+  for (const entry of markers.values()) {
+    if (entry.pinned) {
+      entry.pinned = false;
+      hidePopup(entry.popup);
+    }
+  }
+});
+
 // Mörklägger kartan på riktigt (inte bara ett CSS-filter) genom att gå
 // igenom varje lager i stilen och sätta mörka färger utifrån vilken TYP
 // av lager det är. Byggnader blir uttryckligen svarta, enligt önskemål.
@@ -439,7 +451,7 @@ function applyDarkTheme() {
     const type = layer.type;
     try {
       if (type === "background") {
-        map.setPaintProperty(id, "background-color", "#0a0a0a");
+        map.setPaintProperty(id, "background-color", "#0e0e0e");
       } else if (type === "raster") {
         // T.ex. reliefskuggningen i botten, gjord för ljust tema — dölj den.
         map.setPaintProperty(id, "raster-opacity", 0);
@@ -454,13 +466,17 @@ function applyDarkTheme() {
         // removeUnneededLayers) eftersom fill-extrusion är betydligt
         // tyngre att rita än vanlig platt fyllnad.
       } else if (type === "fill") {
+        // Värden hämtade direkt från Cartos egen Dark Matter-stil (öppen
+        // källkod) för att matcha den så nära som möjligt — bland annat
+        // är deras vatten (#2C353C) faktiskt LJUSARE än bakgrunden/marken,
+        // inte mörkare.
         let fillColor;
         if (id.includes("water")) {
-          fillColor = "#050505";
+          fillColor = "#2c353c";
         } else if (id.includes("park") || id.includes("landcover") || id.includes("wood") || id.includes("grass")) {
           fillColor = "#0e0e0e";
         } else {
-          fillColor = "#131313";
+          fillColor = "#0e0e0e";
         }
         map.setPaintProperty(id, "fill-color", fillColor);
         // Vissa fyllnadslager (t.ex. "park") har en EGEN kantfärg
@@ -471,23 +487,24 @@ function applyDarkTheme() {
           map.setPaintProperty(id, "fill-outline-color", fillColor);
         }
       } else if (type === "line") {
+        // Även dessa värden hämtade direkt från Cartos Dark Matter-stil.
         if (id.includes("waterway")) {
-          map.setPaintProperty(id, "line-color", "#1a1a1a");
+          map.setPaintProperty(id, "line-color", "#3f5a6d");
         } else if (id.includes("boundary")) {
-          map.setPaintProperty(id, "line-color", "#3a3a3a");
+          map.setPaintProperty(id, "line-color", "#676772");
         } else {
           // Järnväg får INTE lila här längre — det skulle färga hela
           // världens järnvägar lila (samma kartlager täcker allt som är
           // synligt, inte bara Skåne). Se highlightSkaneRailLines() nedan
           // för hur vi begränsar den lila färgen till bara Skåne.
-          map.setPaintProperty(id, "line-color", "#333333");
+          map.setPaintProperty(id, "line-color", "#414758");
         }
       } else if (type === "symbol") {
         if (layer.paint && layer.paint["text-color"] !== undefined) {
           map.setPaintProperty(id, "text-color", "#c9c9c9");
         }
         if (layer.paint && layer.paint["text-halo-color"] !== undefined) {
-          map.setPaintProperty(id, "text-halo-color", "#0a0a0a");
+          map.setPaintProperty(id, "text-halo-color", "#0e0e0e");
         }
       }
     } catch (err) {
@@ -502,7 +519,7 @@ function applyDarkTheme() {
     if (!map.getLayer(id)) continue;
     try {
       map.setPaintProperty(id, "text-halo-width", 2.2);
-      map.setPaintProperty(id, "text-halo-color", "#0a0a0a");
+      map.setPaintProperty(id, "text-halo-color", "#0e0e0e");
       map.setPaintProperty(id, "text-halo-blur", 0);
     } catch (err) {
       console.warn(`Kunde inte förstärka etiketten för "${id}":`, err.message);
@@ -888,7 +905,10 @@ function updateVehicles(entities) {
       applyMarkerClasses(el, routeInfo);
       el.innerHTML = iconHtml(routeInfo, isMoving);
 
-      const popup = new maplibregl.Popup({ offset: 14 });
+      // closeOnClick: false — vi hanterar öppning/stängning helt själva
+      // (annars kan MapLibres inbyggda "stäng vid klick"-beteende krocka
+      // med vår egen fastnålningslogik och stänga rutan direkt igen).
+      const popup = new maplibregl.Popup({ offset: 14, closeOnClick: false });
       popup.setHTML(popupHtml);
       // Om rutan stängs av något annat skäl (t.ex. MapLibres inbyggda
       // "klick utanför kartan stänger popupen"), återställ vårt eget
