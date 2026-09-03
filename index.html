@@ -401,6 +401,17 @@ function applyDarkTheme() {
           map.setPaintProperty(id, "line-color", "#1a1a1a");
         } else if (id.includes("boundary")) {
           map.setPaintProperty(id, "line-color", "#3a3a3a");
+        } else if (id.includes("rail")) {
+          // Järnvägsspår från OpenStreetMap — detta ÄR den faktiska,
+          // exakta spårgeometrin (inte en approximation), så vi målar om
+          // dem lila och gör dem tjockare i stället för att rita egna
+          // fågelväg-linjer mellan stationerna.
+          map.setPaintProperty(id, "line-color", "#8a7fd6");
+          if (id.includes("hatching")) {
+            map.setPaintProperty(id, "line-width", 5);
+          } else {
+            map.setPaintProperty(id, "line-width", 3.5);
+          }
         } else {
           map.setPaintProperty(id, "line-color", "#333333");
         }
@@ -1290,29 +1301,10 @@ const MANUAL_TRAIN_LINES = [
 ];
 
 function drawManualTrainLines() {
-  const geojson = {
-    type: "FeatureCollection",
-    features: MANUAL_TRAIN_LINES.map((line) => ({
-      type: "Feature",
-      properties: { name: line.name },
-      geometry: {
-        type: "LineString",
-        coordinates: line.stations.map((s) => [s.lon, s.lat]),
-      },
-    })),
-  };
-  map.addSource("manual-train-lines", { type: "geojson", data: geojson });
-  map.addLayer({
-    id: "manual-train-lines",
-    type: "line",
-    source: "manual-train-lines",
-    layout: { "line-join": "round", "line-cap": "round" },
-    paint: {
-      "line-color": "#8a7fd6",
-      "line-width": 2.5,
-      "line-opacity": 0.7,
-    },
-  });
+  // OBS: vi ritar INTE längre ut egna fågelväg-linjer här — de riktiga
+  // spårlinjerna (från OpenStreetMap, se applyDarkTheme) används i stället,
+  // eftersom de följer den faktiska rälsen exakt. Vi behåller bara de
+  // handplacerade stationsikonerna nedan.
 
   // En markör per unik station (flera linjer kan dela samma station).
   const seen = new Map(); // "lat,lon" -> namn
@@ -1325,11 +1317,101 @@ function drawManualTrainLines() {
       const el = document.createElement("div");
       el.className = "train-station-marker";
       el.innerHTML = `<div class="train-station-icon">🚆</div>`;
+      const popup = new maplibregl.Popup({ offset: 12 }).setHTML(`<div class="popup-content"><b>${s.name}</b></div>`);
       new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat([s.lon, s.lat])
-        .setPopup(new maplibregl.Popup({ offset: 12 }).setHTML(`<div class="popup-content"><b>${s.name}</b></div>`))
+        .setPopup(popup)
         .addTo(map);
+
+      trainStationMarkers.set(s.name, { popup });
     }
+  }
+}
+
+// ============================================================
+// ResRobot — riktiga avgångstider (med förseningar) för tågstationerna
+// ============================================================
+// Skånetrafikens egen GTFS-data saknar tåg helt (se researchen i chatten),
+// men ResRobot täcker ALL kollektivtrafik i Sverige och verkar ha tågen.
+// stationsnamn -> ResRobot-stations-ID (extId). Fyll i efter att du kört
+// lookupStationId("Malmö C") osv i konsolen för varje station. Lämna som
+// null tills vidare — den stationen hoppas bara över i avgångshämtningen.
+const STATION_EXT_IDS = {
+  "Malmö C": null,
+  "Malmö Triangeln": null,
+  "Burlöv": null,
+  "Åkarp": null,
+  "Hjärup": null,
+  "Lund C": null,
+  "Eslöv": null,
+  "Hässleholm C": null,
+  "Kristianstad C": null,
+  "Landskrona": null,
+  "Helsingborg C": null,
+  "Åstorp": null,
+  "Ängelholm": null,
+  "Svågertorp": null,
+  "Vellinge Söderslätt": null,
+  "Trelleborg C": null,
+  "Svedala": null,
+  "Skurup": null,
+  "Ystad": null,
+};
+
+// stationsnamn -> { popup }, fylls av drawManualTrainLines()
+const trainStationMarkers = new Map();
+
+// Kör manuellt i konsolen: lookupStationId("Malmö C") — hittar ResRobots
+// stations-ID:n som du sedan klistrar in i STATION_EXT_IDS ovan.
+window.lookupStationId = async function (name) {
+  const res = await fetch(`${PROXY_URL}/resrobot/stops?name=${encodeURIComponent(name)}`, { cache: "no-store" });
+  if (!res.ok) {
+    console.error(`Fel vid sökning: HTTP ${res.status}`);
+    return;
+  }
+  const data = await res.json();
+  const hits = data.stopLocationOrCoordLocation || [];
+  console.log(
+    `Träffar för "${name}":`,
+    hits.map((h) => {
+      const s = h.StopLocation || h.CoordLocation || {};
+      return { name: s.name, extId: s.extId, lat: s.lat, lon: s.lon };
+    })
+  );
+};
+
+function formatDeparture(dep) {
+  const line = (dep.Product && (dep.Product.num || dep.Product.name)) || dep.transportNumber || "?";
+  const dir = dep.direction || (dep.Stops && "") || "";
+  const time = dep.rtTime || dep.time || "?";
+  const delayed = Boolean(dep.rtTime && dep.time && dep.rtTime !== dep.time);
+  return `${line} → ${dir}: ${time}${delayed ? " (försenad)" : ""}`;
+}
+
+async function updateResRobotDepartures() {
+  for (const [stationName, extId] of Object.entries(STATION_EXT_IDS)) {
+    if (!extId) continue;
+    const entry = trainStationMarkers.get(stationName);
+    if (!entry) continue;
+
+    try {
+      const res = await fetch(`${PROXY_URL}/resrobot/departures?id=${encodeURIComponent(extId)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const departures = (data.Departure || []).slice(0, 4);
+      const list = departures.length
+        ? departures.map((d) => `<div>${formatDeparture(d)}</div>`).join("")
+        : "<div>Inga avgångar just nu</div>";
+      entry.popup.setHTML(
+        `<div class="popup-content"><b>${stationName}</b>${list}</div>`
+      );
+    } catch (err) {
+      console.warn(`Kunde inte hämta avgångar för ${stationName}:`, err.message);
+    }
+
+    // Liten paus mellan varje anrop för att inte belasta ResRobots
+    // anropskvot (Bronze: 45/min) i onödan.
+    await new Promise((r) => setTimeout(r, 300));
   }
 }
 
@@ -1342,6 +1424,14 @@ function drawManualTrainLines() {
   drawAllRailLines();
   drawManualTrainLines();
   pollLoop();
+
+  // ResRobot-avgångar uppdateras separat och mycket glesare (var 90:e sekund)
+  // för att inte förbruka den strama anropskvoten. Görs bara om minst en
+  // station har fått ett ID ifyllt i STATION_EXT_IDS.
+  if (Object.values(STATION_EXT_IDS).some(Boolean)) {
+    updateResRobotDepartures();
+    setInterval(updateResRobotDepartures, 90000);
+  }
 })();
 </script>
 </body>
