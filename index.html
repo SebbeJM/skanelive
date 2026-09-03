@@ -107,7 +107,11 @@
   .vehicle-marker {
     /* Glider mjukt till ny position mellan varje datauppdatering, längs
        hela vägen — ingen "stanna-gå"-känsla. */
-    transition: transform 6.5s linear;
+    /* Standardvärde — den faktiska tiden sätts per fordon i JS (matchar
+       exakt tiden sedan förra uppdateringen, inte en gissad siffra), och
+       ease-in-out i stället för linear så farten inte tvärändrar i skarven
+       mellan två glidningar. */
+    transition: transform 6.5s ease-in-out;
   }
   /* Stäng av glidningen medan kartan pannas/zoomas, annars "flyter" alla
      markörer konstigt när man interagerar med kartan. */
@@ -822,6 +826,15 @@ function updateVehicles(entities) {
       }
       entry.routeInfo = routeInfo;
       entry.moving = isMoving;
+      // Sätt glidningstiden till EXAKT den tid som faktiskt gått sedan
+      // förra uppdateringen (inte en gissad 6,5s) — annars uppstår en
+      // liten paus/ryck i taktskiftet om ett pollningsanrop tar lite
+      // längre eller kortare tid än vanligt.
+      const now = Date.now();
+      const elapsed = entry.lastUpdateTime ? now - entry.lastUpdateTime : POLL_INTERVAL_MS;
+      const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
+      entry.el.style.transitionDuration = `${clamped}ms`;
+      entry.lastUpdateTime = now;
       entry.marker.setLngLat([lon, lat]);
       entry.popup.setHTML(popupHtml);
     } else {
@@ -835,7 +848,7 @@ function updateVehicles(entities) {
         .setPopup(popup)
         .addTo(map);
 
-      markers.set(id, { marker, el, popup, iconKey, routeInfo, moving: isMoving });
+      markers.set(id, { marker, el, popup, iconKey, routeInfo, moving: isMoving, lastUpdateTime: Date.now() });
     }
   }
 
