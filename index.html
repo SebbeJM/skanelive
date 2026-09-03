@@ -139,14 +139,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
-    background: #ffffff;
-    border: 2px solid #8a7fd6;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-    font-size: 10px;
-    line-height: 1;
+    background: #0a0a0a;
+    border: 3px solid #8a7fd6;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    color: #8a7fd6;
   }
 
   .maplibregl-popup-content {
@@ -763,6 +762,14 @@ function iconSizeForZoom() {
   return Math.round(minSize + (maxSize - minSize) * t);
 }
 
+// Skriver rätt etikett i popup-rutan: "Pågatåg X" / "Öresundståg X" för
+// tåg, annars vanliga "Linje X" för bussar/spårvagnar.
+function lineLabelFor(routeInfo, displayName) {
+  if (routeInfo && routeInfo.brand === "oresundstag") return `Öresundståg ${displayName}`;
+  if (routeInfo && routeInfo.brand === "pagatag") return `Pågatåg ${displayName}`;
+  return `Linje ${displayName}`;
+}
+
 function iconHtml(routeInfo) {
   const hasColor = routeInfo && routeInfo.color;
   const bg = hasColor ? `#${routeInfo.color}` : null;
@@ -822,7 +829,7 @@ function updateVehicles(entities) {
 
     const popupHtml = `
       <div class="popup-content">
-        <b>Linje ${displayName}</b>
+        <b>${lineLabelFor(routeInfo, displayName)}</b>
         ${headsign ? `På väg mot: ${headsign}<br>` : ""}
         Hastighet: ${vp.position.speed != null ? Math.round(vp.position.speed * 3.6) + " km/h" : "okänd"}
       </div>
@@ -892,7 +899,7 @@ function updateSimulatedTrains() {
 
     const popupHtml = `
       <div class="popup-content">
-        <b>Linje ${displayName}</b>
+        <b>${lineLabelFor(routeInfo, displayName)}</b>
         ${headsign ? `På väg mot: ${headsign}<br>` : ""}
         Simulerad position (baserad på tidtabell, ej GPS)
       </div>
@@ -980,6 +987,7 @@ async function loadRouteColors() {
         textColor: (row.route_text_color || "").trim(),
         shortName,
         routeType,
+        brand: isRailRouteType(routeType) ? "pagatag" : null,
         colorSource: manualColor ? "manual" : officialColor ? "official" : heuristicColor ? "heuristic" : "auto",
       });
     }
@@ -1117,6 +1125,38 @@ async function loadRouteColors() {
         }
       }
 
+      // Öresundståg kör över bron till Danmark, Pågatåg gör aldrig det —
+      // vi avgör vilket en linje är genom att kolla om NÅGON av dess
+      // stationer faktiskt ligger i Danmark (longitud väster om bron;
+      // Helsingborg/Landskrona ligger på ca 12.69–12.83, København H på
+      // ca 12.56, så 12.6 är en säker brytpunkt mellan dem).
+      const DENMARK_LON_THRESHOLD = 12.6;
+      const oresundstagRouteIds = new Set();
+      for (const [tripId, stops] of railTripStops) {
+        const routeId = routeIdByTripId.get(tripId);
+        if (!routeId || oresundstagRouteIds.has(routeId)) continue;
+        for (const stop of stops) {
+          const s = stopsById.get(stop.stopId);
+          if (s && s.lon < DENMARK_LON_THRESHOLD) {
+            oresundstagRouteIds.add(routeId);
+            break;
+          }
+        }
+      }
+      for (const routeId of oresundstagRouteIds) {
+        const info = routesById.get(routeId);
+        if (!info) continue;
+        info.brand = "oresundstag";
+        // Uppdatera bara färgen om den kom från vår egen gissning (inte om
+        // användaren satt en egen manuell färg, eller om Trafiklab faktiskt
+        // gett en officiell färg).
+        if (info.colorSource === "heuristic" || info.colorSource === "auto") {
+          info.color = "a3a9ad";
+          info.colorSource = "heuristic";
+        }
+      }
+      console.log(`${oresundstagRouteIds.size} linjer identifierade som Öresundståg (korsar till Danmark)`);
+
       console.log(`Laddade tidtabell för ${railTripStops.size} tågresor (stop_times, endast tåg)`);
     }
   } catch (err) {
@@ -1253,81 +1293,34 @@ window.checkVrOperator = async function () {
 // stationerna ligger — INTE hämtat från någon verifierad datakälla. Om
 // något ser fel ut (fel plats, saknad station, fel ordning), säg till så
 // justerar vi koordinaterna.
-const MANUAL_TRAIN_LINES = [
-  {
-    name: "Malmö–Lund–Hässleholm–Kristianstad",
-    stations: [
-      { name: "Malmö C", lat: 55.6094, lon: 12.9998 },
-      { name: "Malmö Triangeln", lat: 55.5945, lon: 13.0007 },
-      { name: "Burlöv", lat: 55.6489, lon: 13.0765 },
-      { name: "Åkarp", lat: 55.6516, lon: 13.1067 },
-      { name: "Hjärup", lat: 55.7024, lon: 13.1128 },
-      { name: "Lund C", lat: 55.7047, lon: 13.1910 },
-      { name: "Eslöv", lat: 55.8388, lon: 13.3034 },
-      { name: "Hässleholm C", lat: 56.1589, lon: 13.7660 },
-      { name: "Kristianstad C", lat: 56.0294, lon: 14.1567 },
-    ],
-  },
-  {
-    name: "Malmö–Landskrona–Helsingborg",
-    stations: [
-      { name: "Malmö C", lat: 55.6094, lon: 12.9998 },
-      { name: "Landskrona", lat: 55.8708, lon: 12.8306 },
-      { name: "Helsingborg C", lat: 56.0465, lon: 12.6945 },
-    ],
-  },
-  {
-    name: "Helsingborg–Åstorp–Hässleholm",
-    stations: [
-      { name: "Helsingborg C", lat: 56.0465, lon: 12.6945 },
-      { name: "Åstorp", lat: 56.1349, lon: 12.9490 },
-      { name: "Hässleholm C", lat: 56.1589, lon: 13.7660 },
-    ],
-  },
-  {
-    name: "Helsingborg–Ängelholm",
-    stations: [
-      { name: "Helsingborg C", lat: 56.0465, lon: 12.6945 },
-      { name: "Ängelholm", lat: 56.2428, lon: 12.8607 },
-    ],
-  },
-  {
-    name: "Malmö–Trelleborg",
-    stations: [
-      { name: "Malmö C", lat: 55.6094, lon: 12.9998 },
-      { name: "Svågertorp", lat: 55.5555, lon: 13.0086 },
-      { name: "Vellinge Söderslätt", lat: 55.4750, lon: 13.0180 },
-      { name: "Trelleborg C", lat: 55.3753, lon: 13.1568 },
-    ],
-  },
-  {
-    name: "Malmö–Svedala–Ystad",
-    stations: [
-      { name: "Malmö C", lat: 55.6094, lon: 12.9998 },
-      { name: "Svedala", lat: 55.5008, lon: 13.2394 },
-      { name: "Skurup", lat: 55.4785, lon: 13.5178 },
-      { name: "Ystad", lat: 55.4295, lon: 13.8203 },
-    ],
-  },
-];
+// ============================================================
+// Riktiga tågstationer, hämtade direkt från Trafiklabs data
+// ============================================================
+// Bygger listan av stationer utifrån vilka hållplatser som FAKTISKT
+// trafikeras av tågresor (railTripStops + stopsById) — riktiga koordinater
+// och riktiga namn, inte handgissade.
+const TRAIN_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="13" height="13">
+    <rect x="5" y="3" width="14" height="14" rx="4" fill="currentColor"/>
+    <rect x="7.5" y="6" width="9" height="5" rx="1" fill="#0a0a0a"/>
+    <rect x="6" y="15.5" width="12" height="2.2" fill="currentColor"/>
+    <circle cx="8.5" cy="19" r="1.8" fill="currentColor"/>
+    <circle cx="15.5" cy="19" r="1.8" fill="currentColor"/>
+  </svg>
+`;
 
-function drawManualTrainLines() {
-  // OBS: vi ritar INTE längre ut egna fågelväg-linjer här — de riktiga
-  // spårlinjerna (från OpenStreetMap, se applyDarkTheme) används i stället,
-  // eftersom de följer den faktiska rälsen exakt. Vi behåller bara de
-  // handplacerade stationsikonerna nedan.
-
-  // En markör per unik station (flera linjer kan dela samma station).
-  const seen = new Map(); // "lat,lon" -> namn
-  for (const line of MANUAL_TRAIN_LINES) {
-    for (const s of line.stations) {
-      const key = `${s.lat},${s.lon}`;
-      if (seen.has(key)) continue;
-      seen.set(key, s.name);
+function drawRealTrainStations() {
+  const seenStopIds = new Set();
+  for (const [tripId, stops] of railTripStops) {
+    for (const stop of stops) {
+      if (seenStopIds.has(stop.stopId)) continue;
+      const s = stopsById.get(stop.stopId);
+      if (!s || !s.name) continue;
+      seenStopIds.add(stop.stopId);
 
       const el = document.createElement("div");
       el.className = "train-station-marker";
-      el.innerHTML = `<div class="train-station-icon">🚆</div>`;
+      el.innerHTML = `<div class="train-station-icon">${TRAIN_ICON_SVG}</div>`;
       const popup = new maplibregl.Popup({ offset: 12 }).setHTML(`<div class="popup-content"><b>${s.name}</b></div>`);
       new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat([s.lon, s.lat])
@@ -1337,6 +1330,7 @@ function drawManualTrainLines() {
       trainStationMarkers.set(s.name, { popup });
     }
   }
+  console.log(`Ritade ${trainStationMarkers.size} riktiga tågstationer från Trafiklabs data`);
 }
 
 // ============================================================
@@ -1347,29 +1341,16 @@ function drawManualTrainLines() {
 // stationsnamn -> ResRobot-stations-ID (extId). Fyll i efter att du kört
 // lookupStationId("Malmö C") osv i konsolen för varje station. Lämna som
 // null tills vidare — den stationen hoppas bara över i avgångshämtningen.
+// stationsnamn (Trafiklabs RIKTIGA namn, syns i popup-rutan när du klickar
+// på en station på kartan) -> ResRobot-stations-ID (extId). Kartan visar nu
+// riktiga stationer hämtade direkt från datan, så namnen här måste matcha
+// exakt vad som faktiskt står i popup-rutorna — kolla där först, kör sedan
+// lookupStationId("exakt namn härifrån") och fyll i nedan.
 const STATION_EXT_IDS = {
-  "Malmö C": null,
-  "Malmö Triangeln": null,
-  "Burlöv": null,
-  "Åkarp": null,
-  "Hjärup": null,
-  "Lund C": null,
-  "Eslöv": null,
-  "Hässleholm C": null,
-  "Kristianstad C": null,
-  "Landskrona": null,
-  "Helsingborg C": null,
-  "Åstorp": null,
-  "Ängelholm": null,
-  "Svågertorp": null,
-  "Vellinge Söderslätt": null,
-  "Trelleborg C": null,
-  "Svedala": null,
-  "Skurup": null,
-  "Ystad": null,
+  // "Malmö C": "740000123",
 };
 
-// stationsnamn -> { popup }, fylls av drawManualTrainLines()
+// stationsnamn -> { popup }, fylls av drawRealTrainStations()
 const trainStationMarkers = new Map();
 
 // Kör manuellt i konsolen: lookupStationId("Malmö C") — hittar ResRobots
@@ -1433,7 +1414,7 @@ async function updateResRobotDepartures() {
   await loadProtoSchema();
   await loadRouteColors(); // hämtas en gång; kartan väntar in detta så första ritningen får rätt färger
   drawAllRailLines();
-  drawManualTrainLines();
+  drawRealTrainStations();
   pollLoop();
 
   // ResRobot-avgångar uppdateras separat och mycket glesare (var 90:e sekund)
