@@ -108,10 +108,11 @@
     /* Glider mjukt till ny position mellan varje datauppdatering, längs
        hela vägen — ingen "stanna-gå"-känsla. */
     /* Standardvärde — den faktiska tiden sätts per fordon i JS (matchar
-       exakt tiden sedan förra uppdateringen, inte en gissad siffra), och
-       ease-in-out i stället för linear så farten inte tvärändrar i skarven
-       mellan två glidningar. */
-    transition: transform 6.5s ease-in-out;
+       exakt tiden sedan förra uppdateringen, inte en gissad siffra).
+       linear (konstant fart) i stället för ease-in-out, eftersom den
+       exakta tidsmatchningen redan tar bort taktskifte-rycket — en
+       inbromsningskurva gav bara en falsk "saktar ner/stannar"-känsla. */
+    transition: transform 6.5s linear;
   }
   /* Stäng av glidningen medan kartan pannas/zoomas, annars "flyter" alla
      markörer konstigt när man interagerar med kartan. */
