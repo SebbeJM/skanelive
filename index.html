@@ -120,6 +120,16 @@
     transition: none !important;
   }
 
+  /* Låt popup-rutan glida i takt med sin markör, i stället för att hoppa
+     direkt till slutpositionen medan ikonen fortfarande glider dit. Den
+     faktiska tiden sätts per fordon i JS (samma värde som markörens). */
+  .maplibregl-popup {
+    transition: transform 6.5s linear;
+  }
+  #map.map-moving .maplibregl-popup {
+    transition: none !important;
+  }
+
   /* Liten, subtil vibration ovanpå den mjuka rörelsen — ger lite "liv" åt
      fordonen (à la SL Live) utan att röra den faktiska positionslogiken.
      Ligger på den INRE ikonen, inte den positionerade markören, så den
@@ -501,6 +511,13 @@ function applyDarkTheme() {
       console.warn(`Kunde inte förstärka etiketten för "${id}":`, err.message);
     }
   }
+
+  // Busshållplatser (poi_transit) ska bara synas när man zoomat in rejält
+  // — annars blir kartan rörig på en översiktsvy. Höj gärna/sänk siffran
+  // om det känns fel (lägre = syns tidigare, högre = kräver mer inzoomning).
+  if (map.getLayer("poi_transit")) {
+    map.setLayerZoomRange("poi_transit", 15, 24);
+  }
 }
 
 // Ungefärlig rektangel runt Skåne (med lite marginal). Används för att
@@ -835,6 +852,14 @@ function updateVehicles(entities) {
       const elapsed = entry.lastUpdateTime ? now - entry.lastUpdateTime : POLL_INTERVAL_MS;
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
       entry.el.style.transitionDuration = `${clamped}ms`;
+      // Samma glidningstid på popup-rutan, så den följer med ikonen i
+      // stället för att hoppa direkt till slutpositionen.
+      try {
+        const popupEl = entry.popup.getElement();
+        if (popupEl) popupEl.style.transitionDuration = `${clamped}ms`;
+      } catch (err) {
+        // Popup-elementet finns inte skapat än (aldrig öppnad) — ofarligt.
+      }
       entry.lastUpdateTime = now;
       entry.marker.setLngLat([lon, lat]);
       entry.popup.setHTML(popupHtml);
@@ -843,13 +868,41 @@ function updateVehicles(entities) {
       applyMarkerClasses(el, routeInfo);
       el.innerHTML = iconHtml(routeInfo, isMoving);
 
-      const popup = new maplibregl.Popup({ offset: 14 }).setHTML(popupHtml);
+      const popup = new maplibregl.Popup({ offset: 14 });
+      popup.setHTML(popupHtml);
+      // Om rutan stängs av något annat skäl (t.ex. MapLibres inbyggda
+      // "klick utanför kartan stänger popupen"), återställ vårt eget
+      // "fastnålad"-läge så hover fortsätter fungera korrekt efteråt.
+      popup.on("close", () => {
+        newEntry.pinned = false;
+      });
       const marker = new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat([lon, lat])
-        .setPopup(popup)
         .addTo(map);
+      // OBS: vi kopplar INTE in .setPopup() här — då hade MapLibre själv
+      // hanterat klick-för-att-visa, vilket skulle krocka med vår egen
+      // hover-/klicklogik nedan. Vi styr popup-rutan helt själva i stället.
 
-      markers.set(id, { marker, el, popup, iconKey, routeInfo, moving: isMoving, lastUpdateTime: Date.now() });
+      const newEntry = { marker, el, popup, iconKey, routeInfo, moving: isMoving, lastUpdateTime: Date.now(), pinned: false };
+      markers.set(id, newEntry);
+
+      // Hovra = visa rutan tillfälligt. Klicka = "nåla fast" den (stannar
+      // kvar tills man klickar på fordonet igen).
+      el.addEventListener("mouseenter", () => {
+        if (!popup.isOpen()) popup.setLngLat(marker.getLngLat()).addTo(map);
+      });
+      el.addEventListener("mouseleave", () => {
+        if (!newEntry.pinned) popup.remove();
+      });
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        newEntry.pinned = !newEntry.pinned;
+        if (newEntry.pinned) {
+          popup.setLngLat(marker.getLngLat()).addTo(map);
+        } else {
+          popup.remove();
+        }
+      });
     }
   }
 
