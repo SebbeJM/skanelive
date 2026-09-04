@@ -873,9 +873,23 @@ function ensureRouteLinesLayer() {
 // fortfarande som rörliga markörer, men utan linjeöverlägg på kartan.
 function ensureRouteShapeDrawn(routeId, routeInfo) {
   if (!routeId || drawnRouteShapes.has(routeId)) return;
+  if (!routeInfo || !isRailRouteType(routeInfo.routeType)) {
+    drawnRouteShapes.add(routeId);
+    return;
+  }
+  // Om kartstilen inte hunnit bli klar än (t.ex. om ett tåg dyker upp i
+  // den allra första hämtningen, innan kartan laddat klart) — hoppa bara
+  // över just den här gången, UTAN att markera som "ritad", så vi
+  // försöker igen nästa uppdatering i stället för att krascha.
+  if (!map.isStyleLoaded()) return;
   drawnRouteShapes.add(routeId); // markera oavsett, så vi inte kollar om och om igen
 
-  if (!routeInfo || !isRailRouteType(routeInfo.routeType)) return;
+  // Öresundståg-sträckan över/under sundet har uppenbarligen väldigt
+  // lågupplöst spårdata i Trafiklabs GTFS (ritar en orealistisk rak
+  // silvrig linje rakt över Öresund i stället för att följa bron/tunneln).
+  // Fordonen visas fortfarande korrekt silverfärgade, vi hoppar bara över
+  // att rita ut LINJEN för just den här kategorin.
+  if (routeInfo.brand === "oresundstag") return;
 
   const shapeIds = shapeIdsByRoute.get(routeId);
   if (!shapeIds) return;
@@ -1594,18 +1608,24 @@ async function updateResRobotDepartures() {
 }
 
 (async function init() {
-  await whenMapLoaded();
-  applyDarkTheme();
-  highlightSkaneRailLines();
-  removeUnneededLayers();
-  await loadProtoSchema(); // krävs för att alls kunna tolka fordonsdata, men går snabbt (bara schema, inget stort nedladdat)
-  pollLoop(); // starta direkt — fordon syns snabbt (i en enkel standardfärg till en början)
+  // OBS: väntar INTE på att kartstilen (100+ lager) ska bli klar innan vi
+  // börjar hämta fordon — det är den STÖRSTA boven till den långa
+  // väntetiden, inte GTFS-datan. Bussarna hämtas/visas nu helt parallellt
+  // med att kartstilen laddar i bakgrunden.
+  await loadProtoSchema(); // går snabbt — bara ett litet inbäddat schema, ingen nätverkshämtning
+  pollLoop(); // fordon börjar dyka upp nästan direkt
 
-  // Den tunga statiska datan (linjefärger, tåglinjer, tågstationer) hämtas
-  // och packas upp i BAKGRUNDEN i stället för att blockera första
-  // uppstarten. Fordonen uppgraderas automatiskt till rätt färger/namn så
-  // fort den blir klar (redan inbyggt i den vanliga uppdateringsloopen).
-  loadRouteColors().then(() => {
+  const mapReady = whenMapLoaded().then(() => {
+    applyDarkTheme();
+    highlightSkaneRailLines();
+    removeUnneededLayers();
+  });
+
+  const routesReady = loadRouteColors(); // den tunga statiska datan, hämtas parallellt
+
+  // Ruttlinjer/tågstationer kräver BÅDE att kartstilen är klar (för att
+  // kunna lägga till egna lager) OCH att GTFS-datan hunnit laddas.
+  Promise.all([mapReady, routesReady]).then(() => {
     drawAllRailLines();
     drawRealTrainStations();
 
