@@ -318,19 +318,26 @@
   // Plockar ut några riktiga gatusträckor (LineString-geometrier) från de
   // väglager kartan redan ritat upp i den synliga vyn.
   function findRealRoadRoutes(count) {
-    const features = map.queryRenderedFeatures({
-      // Alla väglager innehåller "road_" i sitt id i den här kartstilen,
-      // men vi undviker uttryckligen järnväg/vattendrag/gräns även om de
-      // skulle matcha.
-    });
+    const features = map.queryRenderedFeatures();
     const seen = new Set();
     const candidates = [];
+    const layerIdsLogged = new Set();
     for (const f of features) {
       const layerId = f.layer && f.layer.id ? f.layer.id : "";
+      layerIdsLogged.add(`${layerId} (${f.geometry.type})`);
       if (f.geometry.type !== "LineString") continue;
-      if (!layerId.includes("road_") && !layerId.includes("street")) continue;
-      if (layerId.includes("rail") || layerId.includes("water") || layerId.includes("boundary")) continue;
-      if (layerId.includes("label") || layerId.includes("shield") || layerId.includes("arrow")) continue;
+      // Uteslut kända icke-väglager i stället för att gissa exakta
+      // väglagernamn (osäkrare) — ta med allt annat.
+      if (
+        layerId.includes("rail") ||
+        layerId.includes("water") ||
+        layerId.includes("boundary") ||
+        layerId.includes("building") ||
+        layerId.includes("label") ||
+        layerId.includes("shield") ||
+        layerId.includes("arrow") ||
+        layerId.includes("aeroway")
+      ) continue;
       const coords = f.geometry.coordinates;
       if (!coords || coords.length < 2) continue;
       const key = coords[0].join(",") + coords[coords.length - 1].join(",");
@@ -338,6 +345,7 @@
       seen.add(key);
       candidates.push(coords);
     }
+    console.log("Alla lager som hittades i vyn:", [...layerIdsLogged]);
     // Blanda och plocka ut det antal vi behöver.
     for (let i = candidates.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
