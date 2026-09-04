@@ -185,8 +185,8 @@
   const map = new maplibregl.Map({
     container: "bg-map",
     style: "https://tiles.openfreemap.org/styles/liberty",
-    center: [13.0007, 55.6020],
-    zoom: 14.3,
+    center: [13.0130, 55.5935], // Möllevången-området — tätt gatunät, inga tågspår i närheten
+    zoom: 15,
     attributionControl: false,
     interactive: false, // helt icke-interaktiv — bara dekoration
   });
@@ -307,7 +307,8 @@
     { color: "2e7d32", label: "5" },
     { color: "f9a825", label: "171" },
     { color: "2e7d32", label: "8" },
-    { color: "645fa2", label: "Pågatåg" },
+    { color: "2e7d32", label: "3" },
+    { color: "f9a825", label: "146" },
   ];
 
   function makeFakeIcon(color, label) {
@@ -331,7 +332,7 @@
       if (layerId.includes("rail") || layerId.includes("water") || layerId.includes("boundary")) continue;
       if (layerId.includes("label") || layerId.includes("shield") || layerId.includes("arrow")) continue;
       const coords = f.geometry.coordinates;
-      if (!coords || coords.length < 5) continue; // vill ha en lite längre, intressantare sträcka
+      if (!coords || coords.length < 2) continue;
       const key = coords[0].join(",") + coords[coords.length - 1].join(",");
       if (seen.has(key)) continue;
       seen.add(key);
@@ -347,6 +348,7 @@
 
   function startFakeVehicles() {
     const routes = findRealRoadRoutes(FAKE_VEHICLE_STYLE.length);
+    console.log(`Hittade ${routes.length} riktiga gatusträckor att simulera fordon på.`);
     if (routes.length === 0) {
       console.warn("Hittade inga riktiga gator att simulera fordon på ännu.");
       return;
