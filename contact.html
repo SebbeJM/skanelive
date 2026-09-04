@@ -322,12 +322,15 @@
     const seen = new Set();
     const candidates = [];
     const layerIdsLogged = new Set();
+
+    function isValidCoord(c) {
+      return Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1]);
+    }
+
     for (const f of features) {
       const layerId = f.layer && f.layer.id ? f.layer.id : "";
       layerIdsLogged.add(`${layerId} (${f.geometry.type})`);
       if (f.geometry.type !== "LineString") continue;
-      // Uteslut kända icke-väglager i stället för att gissa exakta
-      // väglagernamn (osäkrare) — ta med allt annat.
       if (
         layerId.includes("rail") ||
         layerId.includes("water") ||
@@ -339,7 +342,9 @@
         layerId.includes("aeroway")
       ) continue;
       const coords = f.geometry.coordinates;
-      if (!coords || coords.length < 2) continue;
+      // Kräv att ALLA punkter i sträckan faktiskt är giltiga [lng, lat]-par
+      // — trasiga/ofullständiga koordinater var trolig orsak till kraschen.
+      if (!Array.isArray(coords) || coords.length < 2 || !coords.every(isValidCoord)) continue;
       const key = coords[0].join(",") + coords[coords.length - 1].join(",");
       if (seen.has(key)) continue;
       seen.add(key);
@@ -366,6 +371,14 @@
       return pool[Math.floor(Math.random() * pool.length)];
     }
 
+    // Extra skyddsnät: anropa aldrig setLngLat med ett ogiltigt värde,
+    // även om det inte borde kunna hända efter valideringen ovan.
+    function safeSetLngLat(marker, coord) {
+      if (Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1])) {
+        marker.setLngLat(coord);
+      }
+    }
+
     FAKE_VEHICLE_STYLE.forEach((style) => {
       const el = document.createElement("div");
       el.className = "vehicle-marker";
@@ -377,7 +390,7 @@
 
       let route = randomRoute();
       let step = Math.floor(Math.random() * (route.length - 1));
-      marker.setLngLat(route[step]);
+      safeSetLngLat(marker, route[step]);
 
       const tick = () => {
         step++;
@@ -392,7 +405,7 @@
             step = 0;
             el.style.transitionProperty = "transform";
             el.style.transitionDuration = "0s";
-            marker.setLngLat(route[step]);
+            safeSetLngLat(marker, route[step]);
             // Nästa frame: sätt tillbaka normal glidning och tona in.
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
@@ -404,7 +417,7 @@
           }, 400);
           return;
         }
-        marker.setLngLat(route[step]);
+        safeSetLngLat(marker, route[step]);
       };
       setInterval(tick, tickMs);
     });
