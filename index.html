@@ -60,6 +60,7 @@
   .subtitle {
     margin: 0;
     font-size: 0.92rem;
+    font-weight: 600;
     color: var(--fg);
     font-style: italic;
     white-space: nowrap;
@@ -87,6 +88,20 @@
     border-radius: 50%;
     background: var(--muted);
     margin-right: 0.4em;
+  }
+
+  #contact-btn {
+    flex-shrink: 0;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: var(--fg);
+    text-decoration: none;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  #contact-btn:hover {
+    border-color: var(--muted);
   }
 
   #status.live .dot {
@@ -288,6 +303,7 @@
       <div class="legend-row"><span class="legend-dot" style="background:#a3a9ad"></span>Öresundståg</div>
     </div>
     <div id="status"><span class="dot"></span>ansluter…</div>
+    <a href="contact.html" id="contact-btn">Kontakt</a>
   </header>
   <div style="position: relative; height: 100%;">
     <div id="map"></div>
