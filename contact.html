@@ -77,7 +77,7 @@
     inset: 0;
     z-index: 1;
     pointer-events: none;
-    background: radial-gradient(circle at center, rgba(14,14,14,0.35) 0%, rgba(14,14,14,0.88) 62%, rgba(14,14,14,0.97) 100%);
+    background: radial-gradient(circle at center, rgba(14,14,14,0.2) 0%, rgba(14,14,14,0.55) 62%, rgba(14,14,14,0.75) 100%);
   }
 
   .contact-box {
@@ -390,6 +390,7 @@
 
       let route = randomRoute();
       let step = Math.floor(Math.random() * (route.length - 1));
+      console.log(`Skapade fordonsmarkör "${style.label}" vid`, route[step]);
       safeSetLngLat(marker, route[step]);
 
       const tick = () => {
