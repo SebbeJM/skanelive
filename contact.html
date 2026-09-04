@@ -4,9 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kontakt – Skåne Live</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <style>
   :root {
     --bg: #0e0e0e;
+    --panel: #10161c;
     --fg: #e7ece8;
     --muted: #7d9088;
     --line: #262626;
@@ -30,80 +32,51 @@
   }
 
   /* ============================================================
-     Dekorativ bakgrund — en simulerad "mini-karta" inzoomad på
-     Malmö, med några fordon som rör sig i loop. Helt påhittat för
-     syns skull, ingen riktig data eller API-anrop inblandat.
+     Bakgrund — en RIKTIG karta (samma OpenFreeMap-stil och mörka
+     tema som huvudsidan), inzoomad på Malmö. Helt icke-interaktiv
+     (går inte att panorera/zooma/klicka), och fordonen är simulerade
+     — ingen GPS eller API-anrop laddas, bara för syns skull.
      ============================================================ */
   #bg-map {
     position: absolute;
     inset: 0;
-    overflow: hidden;
     z-index: 0;
+    pointer-events: none;
   }
-  #bg-map svg#bg-streets {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+
+  /* Samma fordonsikon-utseende som på huvudsidan, pixel för pixel. */
+  .vehicle-marker {
+    transition: transform 6.5s linear;
+    will-change: transform;
   }
-  #bg-map svg#bg-streets path {
-    fill: none;
-    stroke: #262626;
-    stroke-width: 0.6;
-  }
-  #bg-map svg#bg-streets .bg-water {
-    fill: #171b1e;
-    stroke: none;
-  }
-  .bg-dot {
-    position: absolute;
-    width: 7px;
-    height: 7px;
+  .vehicle-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
-    box-shadow: 0 0 4px rgba(0,0,0,0.6);
+    background: var(--panel);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    color: var(--fg);
+    font-size: 10px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 600;
   }
-  .bg-dot.green  { background: #2e7d32; }
-  .bg-dot.yellow { background: #f9a825; }
-  .bg-dot.purple { background: #645fa2; }
-
-  @keyframes bgRoute1 {
-    0%   { left: 4%;  top: 78%; }
-    25%  { left: 30%; top: 60%; }
-    50%  { left: 55%; top: 68%; }
-    75%  { left: 78%; top: 45%; }
-    100% { left: 4%;  top: 78%; }
-  }
-  @keyframes bgRoute2 {
-    0%   { left: 92%; top: 20%; }
-    30%  { left: 65%; top: 35%; }
-    60%  { left: 40%; top: 20%; }
-    100% { left: 92%; top: 20%; }
-  }
-  @keyframes bgRoute3 {
-    0%   { left: 15%; top: 12%; }
-    40%  { left: 20%; top: 50%; }
-    70%  { left: 12%; top: 82%; }
-    100% { left: 15%; top: 12%; }
-  }
-  @keyframes bgRoute4 {
-    0%   { left: 85%; top: 88%; }
-    35%  { left: 60%; top: 70%; }
-    65%  { left: 62%; top: 30%; }
-    100% { left: 85%; top: 88%; }
+  .vehicle-icon .label {
+    text-shadow:
+      -1px -1px 0 #000,
+       1px -1px 0 #000,
+      -1px  1px 0 #000,
+       1px  1px 0 #000;
   }
 
-  #bg-map .bg-dot:nth-child(1) { animation: bgRoute1 22s linear infinite; }
-  #bg-map .bg-dot:nth-child(2) { animation: bgRoute2 18s linear infinite; animation-delay: -4s; }
-  #bg-map .bg-dot:nth-child(3) { animation: bgRoute3 26s linear infinite; animation-delay: -11s; }
-  #bg-map .bg-dot:nth-child(4) { animation: bgRoute4 20s linear infinite; animation-delay: -7s; }
-  #bg-map .bg-dot:nth-child(5) { animation: bgRoute1 22s linear infinite; animation-delay: -15s; }
-  #bg-map .bg-dot:nth-child(6) { animation: bgRoute2 18s linear infinite; animation-delay: -9s; }
-
-  /* Mörk vinjett ovanpå bakgrunden så kontaktrutan alltid är lätt att läsa. */
+  /* Mörk vinjett ovanpå kartan så kontaktrutan alltid är lätt att läsa. */
   #bg-vignette {
     position: absolute;
     inset: 0;
     z-index: 1;
+    pointer-events: none;
     background: radial-gradient(circle at center, rgba(14,14,14,0.35) 0%, rgba(14,14,14,0.88) 62%, rgba(14,14,14,0.97) 100%);
   }
 
@@ -163,27 +136,7 @@
 </style>
 </head>
 <body>
-  <div id="bg-map" aria-hidden="true">
-    <svg id="bg-streets" viewBox="0 0 100 100" preserveAspectRatio="none">
-      <!-- Löst inspirerat av Malmös gatunät (Öresund i hörnet, någon
-           diagonal huvudled, ett rutnät i övrigt) — inte en exakt karta. -->
-      <path class="bg-water" d="M0,0 L18,0 L8,16 L0,10 Z" />
-      <path d="M0,10 C 20,20 40,15 60,25 S 90,20 100,30" />
-      <path d="M0,35 C 25,40 45,32 70,42 S 95,45 100,50" />
-      <path d="M0,60 C 20,55 50,68 75,58 S 95,65 100,62" />
-      <path d="M0,85 C 30,80 55,90 100,82" />
-      <path d="M10,0 C 15,25 5,55 18,100" />
-      <path d="M35,0 C 30,30 40,60 32,100" />
-      <path d="M58,0 C 63,25 55,55 65,100" />
-      <path d="M82,0 C 78,30 88,60 80,100" />
-    </svg>
-    <div class="bg-dot green"></div>
-    <div class="bg-dot yellow"></div>
-    <div class="bg-dot purple"></div>
-    <div class="bg-dot green"></div>
-    <div class="bg-dot yellow"></div>
-    <div class="bg-dot purple"></div>
-  </div>
+  <div id="bg-map" aria-hidden="true"></div>
   <div id="bg-vignette" aria-hidden="true"></div>
 
   <div class="contact-box">
@@ -202,7 +155,11 @@
     <a class="back-link" href="index.html">← Tillbaka till kartan</a>
   </div>
 
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
+  // ============================================================
+  // Kopiera-knapp
+  // ============================================================
   const copyBtn = document.getElementById("copy-btn");
   const feedback = document.getElementById("copy-feedback");
   const email = document.getElementById("email-text").textContent;
@@ -211,7 +168,6 @@
     try {
       await navigator.clipboard.writeText(email);
     } catch (err) {
-      // Reservlösning för äldre webbläsare utan Clipboard API
       const ta = document.createElement("textarea");
       ta.value = email;
       document.body.appendChild(ta);
@@ -221,6 +177,212 @@
     }
     feedback.classList.add("visible");
     setTimeout(() => feedback.classList.remove("visible"), 1500);
+  });
+
+  // ============================================================
+  // Bakgrundskarta — Malmö centrum, samma stil/tema som huvudsidan
+  // ============================================================
+  const map = new maplibregl.Map({
+    container: "bg-map",
+    style: "https://tiles.openfreemap.org/styles/liberty",
+    center: [13.0007, 55.6020],
+    zoom: 14.3,
+    attributionControl: false,
+    interactive: false, // helt icke-interaktiv — bara dekoration
+  });
+
+  // ---- Samma mörkläggningslogik som huvudsidans applyDarkTheme() ----
+  const LAYERS_TO_REMOVE = [
+    "building-3d",
+    "aeroway_fill", "aeroway_runway", "aeroway_taxiway",
+    "boundary_3", "boundary_2", "boundary_disputed",
+    "waterway_line_label", "water_name_point_label", "water_name_line_label",
+    "poi_r20", "poi_r7", "poi_r1",
+    "highway-name-path", "highway-name-minor", "highway-name-major",
+    "highway-shield-non-us", "highway-shield-us-interstate", "road_shield_us",
+    "road_one_way_arrow", "road_one_way_arrow_opposite",
+    "label_other", "label_village", "label_state",
+    "label_country_3", "label_country_2", "label_country_1",
+    "poi_transit", "airport", // ingen anledning att visa hållplatser här
+  ];
+
+  function removeUnneededLayers() {
+    for (const id of LAYERS_TO_REMOVE) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+  }
+
+  function applyDarkTheme() {
+    const style = map.getStyle();
+    for (const layer of style.layers) {
+      const id = layer.id;
+      const type = layer.type;
+      try {
+        if (type === "background") {
+          map.setPaintProperty(id, "background-color", "#0e0e0e");
+        } else if (type === "raster") {
+          map.setPaintProperty(id, "raster-opacity", 0);
+        } else if (id === "building") {
+          map.setPaintProperty(id, "fill-color", "#000000");
+          map.setPaintProperty(id, "fill-outline-color", "#000000");
+          map.setLayerZoomRange(id, 13, 24);
+        } else if (id === "building-3d") {
+          // borttaget nedan
+        } else if (type === "fill") {
+          let fillColor;
+          if (id.includes("water")) {
+            fillColor = "#2c353c";
+          } else {
+            fillColor = "#0e0e0e";
+          }
+          map.setPaintProperty(id, "fill-color", fillColor);
+          if (layer.paint && layer.paint["fill-outline-color"] !== undefined) {
+            map.setPaintProperty(id, "fill-outline-color", fillColor);
+          }
+        } else if (type === "line") {
+          if (id.includes("waterway")) {
+            map.setPaintProperty(id, "line-color", "#3f5a6d");
+          } else if (id.includes("boundary")) {
+            map.setPaintProperty(id, "line-color", "#676772");
+          } else {
+            map.setPaintProperty(id, "line-color", "#1c1f26");
+          }
+        } else if (type === "symbol") {
+          if (layer.paint && layer.paint["text-color"] !== undefined) {
+            map.setPaintProperty(id, "text-color", "#c9c9c9");
+          }
+          if (layer.paint && layer.paint["text-halo-color"] !== undefined) {
+            map.setPaintProperty(id, "text-halo-color", "#0e0e0e");
+          }
+        }
+      } catch (err) {
+        // Vissa lager saknar egenskapen — hoppa bara över.
+      }
+    }
+  }
+
+  // ---- Samma lila Skåne-järnvägshöjdning som huvudsidan (harmless bonus om
+  // det finns spår i vy, annars gör den helt enkelt ingenting) ----
+  const SKANE_BOUNDS_POLYGON = {
+    type: "Polygon",
+    coordinates: [[
+      [12.65, 55.25], [14.65, 55.25], [14.65, 56.55], [12.65, 56.55], [12.65, 55.25],
+    ]],
+  };
+  function highlightSkaneRailLines() {
+    const style = map.getStyle();
+    for (const layer of style.layers) {
+      if (layer.type !== "line" || !layer.id.includes("rail")) continue;
+      if (layer.id.endsWith("-skane")) continue;
+      const highlightId = `${layer.id}-skane`;
+      if (map.getLayer(highlightId)) continue;
+      const geoFilter = ["within", SKANE_BOUNDS_POLYGON];
+      const combinedFilter = layer.filter ? ["all", layer.filter, geoFilter] : geoFilter;
+      try {
+        map.addLayer({
+          id: highlightId,
+          type: "line",
+          source: layer.source,
+          ...(layer["source-layer"] ? { "source-layer": layer["source-layer"] } : {}),
+          layout: layer.layout || {},
+          filter: combinedFilter,
+          paint: {
+            "line-color": "#8a7fd6",
+            "line-width": layer.id.includes("hatching") ? 5 : 3.5,
+          },
+        });
+      } catch (err) {
+        // Ofarligt om det misslyckas — rent kosmetiskt.
+      }
+    }
+  }
+
+  // ============================================================
+  // Simulerade fordon — rör sig längs RIKTIGA gator, hämtade direkt
+  // från kartans egna (redan laddade) väggeometri, i stället för
+  // gissade koordinater. Inget extra API-anrop, ingen GPS — bara
+  // kartans egen vektordata återanvänd.
+  // ============================================================
+  const FAKE_VEHICLE_STYLE = [
+    { color: "2e7d32", label: "5" },
+    { color: "f9a825", label: "171" },
+    { color: "2e7d32", label: "8" },
+    { color: "645fa2", label: "Pågatåg" },
+  ];
+
+  function makeFakeIcon(color, label) {
+    return `<div class="vehicle-icon" style="background:#${color};"><span class="label">${label}</span></div>`;
+  }
+
+  // Plockar ut några riktiga gatusträckor (LineString-geometrier) från de
+  // väglager kartan redan ritat upp i den synliga vyn.
+  function findRealRoadRoutes(count) {
+    const features = map.queryRenderedFeatures({
+      // Alla väglager innehåller "road_" i sitt id i den här kartstilen,
+      // men vi undviker uttryckligen järnväg/vattendrag/gräns även om de
+      // skulle matcha.
+    });
+    const seen = new Set();
+    const candidates = [];
+    for (const f of features) {
+      const layerId = f.layer && f.layer.id ? f.layer.id : "";
+      if (f.geometry.type !== "LineString") continue;
+      if (!layerId.includes("road_") && !layerId.includes("street")) continue;
+      if (layerId.includes("rail") || layerId.includes("water") || layerId.includes("boundary")) continue;
+      if (layerId.includes("label") || layerId.includes("shield") || layerId.includes("arrow")) continue;
+      const coords = f.geometry.coordinates;
+      if (!coords || coords.length < 5) continue; // vill ha en lite längre, intressantare sträcka
+      const key = coords[0].join(",") + coords[coords.length - 1].join(",");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(coords);
+    }
+    // Blanda och plocka ut det antal vi behöver.
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+    return candidates.slice(0, count);
+  }
+
+  function startFakeVehicles() {
+    const routes = findRealRoadRoutes(FAKE_VEHICLE_STYLE.length);
+    if (routes.length === 0) {
+      console.warn("Hittade inga riktiga gator att simulera fordon på ännu.");
+      return;
+    }
+
+    routes.forEach((route, i) => {
+      const style = FAKE_VEHICLE_STYLE[i % FAKE_VEHICLE_STYLE.length];
+      // Åk fram och tillbaka längs sträckan (en enkelriktad väg-bit blir
+      // annars bara en kort rak resa åt ett håll).
+      const pingPongRoute = route.concat(route.slice(0, -1).reverse());
+
+      const el = document.createElement("div");
+      el.className = "vehicle-marker";
+      el.innerHTML = makeFakeIcon(style.color, style.label);
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat(pingPongRoute[0])
+        .addTo(map);
+
+      let step = Math.floor(Math.random() * pingPongRoute.length);
+      const advance = () => {
+        step = (step + 1) % pingPongRoute.length;
+        marker.setLngLat(pingPongRoute[step]);
+      };
+      setInterval(advance, 2200 + Math.random() * 800);
+    });
+  }
+
+  // "idle" (inte "load") — vi vill vara säkra på att kakelrutorna med
+  // väggeometrin faktiskt hunnit ritas innan vi frågar efter dem.
+  map.on("load", () => {
+    applyDarkTheme();
+    removeUnneededLayers();
+    highlightSkaneRailLines();
+  });
+  map.once("idle", () => {
+    startFakeVehicles();
   });
 </script>
 </body>
