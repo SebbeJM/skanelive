@@ -791,6 +791,28 @@ const papaparseReady = loadScript("https://unpkg.com/papaparse@5.4.1/papaparse.m
 // ============================================================
 // Statisk linjedata (färger, trips, shapes) – hämtas en gång vid start
 // ============================================================
+// Tolkar en CSV-textsträng i en BAKGRUNDSTRÅD (Web Worker, inbyggt i Papa
+// Parse via worker:true) i stället för på huvudtråden. Utan detta fryser
+// hela sidan (inklusive redan hämtade bussars rendering!) medan stora
+// filer som stop_times.txt (47 000+ resor) tolkas — JavaScript kan bara
+// göra en sak i taget på huvudtråden, "väntar inte på den"-strukturen vi
+// byggt hindrar bara NÄTVERKSHÄMTNINGEN från att blockera, inte själva
+// CPU-arbetet med att tolka datan när den väl kommit fram.
+// OBS: transformHeader-funktioner går inte att skicka till en Worker
+// (går inte att serialisera), så vi tar bort en eventuell BOM manuellt
+// ur texten INNAN parsningen i stället.
+function parseCsvInBackground(text) {
+  const cleanText = text.replace(/^\uFEFF/, "");
+  return new Promise((resolve) => {
+    Papa.parse(cleanText, {
+      header: true,
+      skipEmptyLines: true,
+      worker: true,
+      complete: resolve,
+    });
+  });
+}
+
 async function loadRouteColors() {
   await Promise.all([jszipReady, papaparseReady]);
   try {
@@ -803,11 +825,7 @@ async function loadRouteColors() {
     if (!routesFile) throw new Error("routes.txt saknas i zip-filen");
 
     const csvText = await routesFile.async("string");
-    const parsed = Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
-    });
+    const parsed = await parseCsvInBackground(csvText);
 
     for (const row of parsed.data) {
       const id = (row.route_id || "").trim();
@@ -832,11 +850,7 @@ async function loadRouteColors() {
     const tripsFile = zip.file("trips.txt");
     if (tripsFile) {
       const tripsText = await tripsFile.async("string");
-      const parsedTrips = Papa.parse(tripsText, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
-      });
+      const parsedTrips = await parseCsvInBackground(tripsText);
       for (const row of parsedTrips.data) {
         const tripId = (row.trip_id || "").trim();
         const routeId = (row.route_id || "").trim();
@@ -855,11 +869,7 @@ async function loadRouteColors() {
     const shapesFile = zip.file("shapes.txt");
     if (shapesFile) {
       const shapesText = await shapesFile.async("string");
-      const parsedShapes = Papa.parse(shapesText, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
-      });
+      const parsedShapes = await parseCsvInBackground(shapesText);
       const raw = new Map();
       for (const row of parsedShapes.data) {
         const shapeId = (row.shape_id || "").trim();
@@ -870,10 +880,18 @@ async function loadRouteColors() {
         if (!raw.has(shapeId)) raw.set(shapeId, []);
         raw.get(shapeId).push({ seq: Number.isNaN(seq) ? 0 : seq, lat, lon });
       }
+      let processed = 0;
       for (const [shapeId, points] of raw) {
         points.sort((a, b) => a.seq - b.seq);
         const simplified = simplifyPoints(points.map((p) => [p.lat, p.lon]), 8);
         shapePointsById.set(shapeId, simplified);
+        processed++;
+        // Släpp huvudtråden var 200:e körväg, så resten av sidan (t.ex.
+        // redan hämtade bussars rendering) hinner köra emellanåt i stället
+        // för att allt fryser tills ALLA 1800+ körvägar är klara.
+        if (processed % 200 === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
       }
       console.log(`Laddade ${shapePointsById.size} körvägar (shapes, förenklade)`);
     }
@@ -881,11 +899,7 @@ async function loadRouteColors() {
     const stopsFile = zip.file("stops.txt");
     if (stopsFile) {
       const stopsText = await stopsFile.async("string");
-      const parsedStops = Papa.parse(stopsText, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
-      });
+      const parsedStops = await parseCsvInBackground(stopsText);
       for (const row of parsedStops.data) {
         const stopId = (row.stop_id || "").trim();
         const lat = parseFloat(row.stop_lat);
@@ -905,15 +919,12 @@ async function loadRouteColors() {
     const stopTimesFile = zip.file("stop_times.txt");
     if (stopTimesFile) {
       const stopTimesText = await stopTimesFile.async("string");
-      const parsedStopTimes = Papa.parse(stopTimesText, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
-      });
+      const parsedStopTimes = await parseCsvInBackground(stopTimesText);
       const stopIdsByRoute = new Map();
       const lastStopByTripId = new Map();
 
-      for (const row of parsedStopTimes.data) {
+      for (let i = 0; i < parsedStopTimes.data.length; i++) {
+        const row = parsedStopTimes.data[i];
         const tripId = (row.trip_id || "").trim();
         const stopId = (row.stop_id || "").trim();
         if (!tripId || !stopId) continue;
@@ -932,6 +943,12 @@ async function loadRouteColors() {
         if (!routeId) continue;
         if (!stopIdsByRoute.has(routeId)) stopIdsByRoute.set(routeId, new Set());
         stopIdsByRoute.get(routeId).add(stopId);
+
+        // Släpp huvudtråden med jämna mellanrum — det här kan vara
+        // hundratusentals rader totalt.
+        if (i % 20000 === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
       }
 
       for (const [tripId, last] of lastStopByTripId) {
