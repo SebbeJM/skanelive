@@ -309,6 +309,11 @@
     { color: "2e7d32", label: "8" },
     { color: "2e7d32", label: "3" },
     { color: "f9a825", label: "146" },
+    { color: "2e7d32", label: "1" },
+    { color: "f9a825", label: "159" },
+    { color: "2e7d32", label: "9" },
+    { color: "2e7d32", label: "11" },
+    { color: "f9a825", label: "133" },
   ];
 
   function makeFakeIcon(color, label) {
@@ -360,7 +365,7 @@
   }
 
   function startFakeVehicles() {
-    const pool = findRealRoadRoutes(24); // en större pool att välja nya gator ifrån
+    const pool = findRealRoadRoutes(40); // en större pool att välja nya gator ifrån
     console.log(`Hittade ${pool.length} riktiga gatusträckor att simulera fordon på.`);
     if (pool.length === 0) {
       console.warn("Hittade inga riktiga gator att simulera fordon på ännu.");
@@ -379,51 +384,90 @@
       }
     }
 
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (d) => (d * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // Ungefär stadsbuss-fart. Alla fordon kör i samma takt hela tiden,
+    // oavsett hur lång/kort varje delsträcka mellan två punkter är —
+    // glidningstiden räknas ut från det VERKLIGA avståndet varje gång.
+    const SPEED_MPS = 8;
+    const EDGE_MARGIN_PX = 50;
+
+    function isNearScreenEdge(coord) {
+      const p = map.project(coord);
+      const w = map.getContainer().clientWidth;
+      const h = map.getContainer().clientHeight;
+      return p.x < EDGE_MARGIN_PX || p.x > w - EDGE_MARGIN_PX || p.y < EDGE_MARGIN_PX || p.y > h - EDGE_MARGIN_PX;
+    }
+
     FAKE_VEHICLE_STYLE.forEach((style) => {
       const el = document.createElement("div");
       el.className = "vehicle-marker";
       el.innerHTML = makeFakeIcon(style.color, style.label);
-      const tickMs = 2400 + Math.random() * 600;
       el.style.transitionProperty = "transform";
-      el.style.transitionDuration = `${tickMs}ms`;
-      // Räkna ut startpositionen FÖRST, sätt den direkt vid skapandet — att
-      // lägga till markören på kartan innan den har en position alls var
-      // orsaken till kraschen.
+
       let route = randomRoute();
       let step = Math.floor(Math.random() * (route.length - 1));
-      console.log(`Skapade fordonsmarkör "${style.label}" vid`, route[step]);
       const marker = new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat(route[step])
         .addTo(map);
 
-      const tick = () => {
-        step++;
-        if (step >= route.length) {
-          // Vägens slut nådd — "kör av skärmen": tona ut, hoppa osynligt
-          // till en ny slumpad gata, tona in igen. Aldrig en U-sväng.
-          el.style.transitionProperty = "opacity";
-          el.style.transitionDuration = "0.4s";
-          el.style.opacity = "0";
-          setTimeout(() => {
+      let timer = null;
+
+      function fadeToNewRoute() {
+        el.style.transitionProperty = "opacity";
+        el.style.transitionDuration = "0.4s";
+        el.style.opacity = "0";
+        setTimeout(() => {
+          route = randomRoute();
+          step = 0;
+          el.style.transitionProperty = "transform";
+          el.style.transitionDuration = "0s";
+          safeSetLngLat(marker, route[step]);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              el.style.transitionProperty = "transform, opacity";
+              el.style.opacity = "1";
+              scheduleNextStep();
+            });
+          });
+        }, 400);
+      }
+
+      function scheduleNextStep() {
+        const from = route[step];
+        const to = route[step + 1];
+        if (!to) {
+          // Vägens slut nådd. Tona bara ut om vi faktiskt är nära
+          // skärmkanten — annars fortsätter det bara sömlöst på en ny
+          // gata utan att blinka till.
+          if (isNearScreenEdge(from)) {
+            fadeToNewRoute();
+          } else {
             route = randomRoute();
             step = 0;
-            el.style.transitionProperty = "transform";
-            el.style.transitionDuration = "0s";
-            safeSetLngLat(marker, route[step]);
-            // Nästa frame: sätt tillbaka normal glidning och tona in.
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                el.style.transitionProperty = "transform, opacity";
-                el.style.transitionDuration = `${tickMs}ms, 0.4s`;
-                el.style.opacity = "1";
-              });
-            });
-          }, 400);
+            scheduleNextStep();
+          }
           return;
         }
-        safeSetLngLat(marker, route[step]);
-      };
-      setInterval(tick, tickMs);
+        const distance = haversineMeters(from[1], from[0], to[1], to[0]);
+        const durationS = Math.max(0.15, distance / SPEED_MPS);
+        el.style.transitionProperty = "transform";
+        el.style.transitionDuration = `${durationS}s`;
+        safeSetLngLat(marker, to);
+        step++;
+        timer = setTimeout(scheduleNextStep, durationS * 1000);
+      }
+
+      scheduleNextStep();
     });
   }
 
