@@ -186,7 +186,7 @@
     container: "bg-map",
     style: "https://tiles.openfreemap.org/styles/liberty",
     center: [13.0130, 55.5935], // Möllevången-området — tätt gatunät, inga tågspår i närheten
-    zoom: 15,
+    zoom: 16.5,
     attributionControl: false,
     interactive: false, // helt icke-interaktiv — bara dekoration
   });
@@ -347,32 +347,58 @@
   }
 
   function startFakeVehicles() {
-    const routes = findRealRoadRoutes(FAKE_VEHICLE_STYLE.length);
-    console.log(`Hittade ${routes.length} riktiga gatusträckor att simulera fordon på.`);
-    if (routes.length === 0) {
+    const pool = findRealRoadRoutes(24); // en större pool att välja nya gator ifrån
+    console.log(`Hittade ${pool.length} riktiga gatusträckor att simulera fordon på.`);
+    if (pool.length === 0) {
       console.warn("Hittade inga riktiga gator att simulera fordon på ännu.");
       return;
     }
 
-    routes.forEach((route, i) => {
-      const style = FAKE_VEHICLE_STYLE[i % FAKE_VEHICLE_STYLE.length];
-      // Åk fram och tillbaka längs sträckan (en enkelriktad väg-bit blir
-      // annars bara en kort rak resa åt ett håll).
-      const pingPongRoute = route.concat(route.slice(0, -1).reverse());
+    function randomRoute() {
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
 
+    FAKE_VEHICLE_STYLE.forEach((style) => {
       const el = document.createElement("div");
       el.className = "vehicle-marker";
       el.innerHTML = makeFakeIcon(style.color, style.label);
-      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
-        .setLngLat(pingPongRoute[0])
-        .addTo(map);
+      const tickMs = 2400 + Math.random() * 600;
+      el.style.transitionProperty = "transform";
+      el.style.transitionDuration = `${tickMs}ms`;
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" }).addTo(map);
 
-      let step = Math.floor(Math.random() * pingPongRoute.length);
-      const advance = () => {
-        step = (step + 1) % pingPongRoute.length;
-        marker.setLngLat(pingPongRoute[step]);
+      let route = randomRoute();
+      let step = Math.floor(Math.random() * (route.length - 1));
+      marker.setLngLat(route[step]);
+
+      const tick = () => {
+        step++;
+        if (step >= route.length) {
+          // Vägens slut nådd — "kör av skärmen": tona ut, hoppa osynligt
+          // till en ny slumpad gata, tona in igen. Aldrig en U-sväng.
+          el.style.transitionProperty = "opacity";
+          el.style.transitionDuration = "0.4s";
+          el.style.opacity = "0";
+          setTimeout(() => {
+            route = randomRoute();
+            step = 0;
+            el.style.transitionProperty = "transform";
+            el.style.transitionDuration = "0s";
+            marker.setLngLat(route[step]);
+            // Nästa frame: sätt tillbaka normal glidning och tona in.
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                el.style.transitionProperty = "transform, opacity";
+                el.style.transitionDuration = `${tickMs}ms, 0.4s`;
+                el.style.opacity = "1";
+              });
+            });
+          }, 400);
+          return;
+        }
+        marker.setLngLat(route[step]);
       };
-      setInterval(advance, 2200 + Math.random() * 800);
+      setInterval(tick, tickMs);
     });
   }
 
