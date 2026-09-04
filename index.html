@@ -127,24 +127,23 @@
     transition: opacity 0.18s ease;
   }
 
-  /* Liten, subtil vibration ovanpå den mjuka rörelsen — ger lite "liv" åt
-     fordonen (à la SL Live) utan att röra den faktiska positionslogiken.
-     Ligger på den INRE ikonen, inte den positionerade markören, så den
-     stör inte glidningen ovan. Aktiveras BARA när fordonet faktiskt rör
-     sig (se .moving-klassen, satt utifrån rapporterad hastighet i JS).
-     animation-delay sätts slumpmässigt per fordon inline i JS, så alla
-     inte skakar exakt i takt. */
+  /* Liten, subtil vibration ovanpå den mjuka rörelsen — bara när fordonet
+     faktiskt rör sig (.moving-klassen, satt utifrån rapporterad hastighet
+     i JS). Mindre värden än tidigare försök — ska knappt märkas, bara ge
+     en gnutta liv. animation-delay slumpas per fordon i JS så alla inte
+     skakar exakt i takt. */
   @keyframes vehicle-jitter {
     0%   { transform: translate(0, 0); }
-    20%  { transform: translate(0.35px, -0.25px); }
-    40%  { transform: translate(-0.3px, 0.3px); }
-    60%  { transform: translate(0.25px, 0.35px); }
-    80%  { transform: translate(-0.35px, -0.2px); }
+    20%  { transform: translate(0.18px, -0.12px); }
+    40%  { transform: translate(-0.15px, 0.15px); }
+    60%  { transform: translate(0.12px, 0.18px); }
+    80%  { transform: translate(-0.18px, -0.1px); }
     100% { transform: translate(0, 0); }
   }
   .vehicle-icon.moving {
     animation: vehicle-jitter 0.9s steps(5) infinite;
   }
+
 
   .vehicle-icon {
     display: flex;
@@ -912,10 +911,9 @@ function updateVehicles(entities) {
       }
       entry.routeInfo = routeInfo;
       entry.moving = isMoving;
-      // Sätt glidningstiden till EXAKT den tid som faktiskt gått sedan
-      // förra uppdateringen (inte en gissad 6,5s) — annars uppstår en
-      // liten paus/ryck i taktskiftet om ett pollningsanrop tar lite
-      // längre eller kortare tid än vanligt.
+      // Glidningstiden sätts till EXAKT den tid som faktiskt gått sedan
+      // förra uppdateringen — helt smidig, ingen paus alls mellan
+      // glidningarna.
       const now = Date.now();
       const elapsed = entry.lastUpdateTime ? now - entry.lastUpdateTime : POLL_INTERVAL_MS;
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
