@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Skåne Live – realtidskarta över kollektivtrafiken</title>
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="preconnect" href="https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev">
+<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <style>
   :root {
@@ -376,8 +379,6 @@
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/protobufjs@7.2.6/dist/protobuf.min.js"></script>
-<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
-<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
 // ============================================================
 // KONFIGURATION – ändra detta
@@ -397,8 +398,8 @@ const ROUTES_URL = `${PROXY_URL}/routes`;
 const POLL_INTERVAL_MS = 7000;
 
 // Ungefärlig mittpunkt över Skåne (lat, lon)
-const MAP_CENTER = [55.99, 13.45];
-const MAP_ZOOM = 9;
+const MAP_CENTER = [55.605, 12.9998]; // centrerad över Malmö vid start
+const MAP_ZOOM = 12;
 
 // ============================================================
 // MANUELLA LINJEFÄRGER – redigera denna lista själv
@@ -1161,10 +1162,29 @@ async function loadProtoSchema() {
   FeedMessageType = root.lookupType("transit_realtime.FeedMessage");
 }
 
+// Laddar ett externt skript i bakgrunden, utan att blockera resten av
+// sidans kod (till skillnad mot en vanlig <script src>-tagg i <head>/<body>,
+// som blockerar ALL kod efter den tills den laddats klart).
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error(`Kunde inte ladda ${src}`));
+    document.head.appendChild(s);
+  });
+}
+// Startas direkt (parallellt med allt annat) men väntas bara in av
+// loadRouteColors(), som är enda stället JSZip/Papa faktiskt behövs —
+// bussarna väntar inte på dessa.
+const jszipReady = loadScript("https://unpkg.com/jszip@3.10.1/dist/jszip.min.js");
+const papaparseReady = loadScript("https://unpkg.com/papaparse@5.4.1/papaparse.min.js");
+
 // ============================================================
 // Statisk linjedata (färger, trips, shapes) – hämtas en gång vid start
 // ============================================================
 async function loadRouteColors() {
+  await Promise.all([jszipReady, papaparseReady]);
   try {
     const res = await fetch(ROUTES_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1461,6 +1481,7 @@ function drawAllRailLines() {
 // (VR Sverige) i stället för "skane". Kan tas bort när vi vet svaret.
 // ============================================================
 window.checkVrOperator = async function () {
+  await Promise.all([jszipReady, papaparseReady]); // säkerställ att JSZip/Papa hunnit ladda om man kör detta väldigt tidigt
   console.log("Hämtar vr-operatörens statiska data...");
   const res = await fetch(`${PROXY_URL}/routes-vr`, { cache: "no-store" });
   if (!res.ok) {
