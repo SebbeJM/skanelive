@@ -386,12 +386,15 @@
       const tickMs = 2400 + Math.random() * 600;
       el.style.transitionProperty = "transform";
       el.style.transitionDuration = `${tickMs}ms`;
-      const marker = new maplibregl.Marker({ element: el, anchor: "center" }).addTo(map);
-
+      // Räkna ut startpositionen FÖRST, sätt den direkt vid skapandet — att
+      // lägga till markören på kartan innan den har en position alls var
+      // orsaken till kraschen.
       let route = randomRoute();
       let step = Math.floor(Math.random() * (route.length - 1));
       console.log(`Skapade fordonsmarkör "${style.label}" vid`, route[step]);
-      safeSetLngLat(marker, route[step]);
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat(route[step])
+        .addTo(map);
 
       const tick = () => {
         step++;
