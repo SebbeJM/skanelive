@@ -113,6 +113,10 @@
        exakta tidsmatchningen redan tar bort taktskifte-rycket — en
        inbromsningskurva gav bara en falsk "saktar ner/stannar"-känsla. */
     transition: transform 6.5s linear;
+    /* Ber webbläsaren förbereda ett eget GPU-lager för denna egenskap i
+       förväg — gör glidningen/skakningen mjukare på svagare hårdvara
+       (t.ex. mobiler), ingen visuell skillnad. */
+    will-change: transform;
   }
   /* Stäng av glidningen medan kartan pannas/zoomas, annars "flyter" alla
      markörer konstigt när man interagerar med kartan. */
@@ -247,15 +251,25 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    border: 2px solid #ffffff;
     flex-shrink: 0;
   }
 
   /* På smala skärmar döljs undertext + färgförklaring i stället för att
      radbryta — headern ska aldrig bli högre eller lägre. */
   @media (max-width: 700px) {
-    .subtitle, #legend-inline {
+    .subtitle {
       display: none;
+    }
+    header {
+      flex-wrap: wrap;
+      row-gap: 0.5rem;
+    }
+    #legend-inline {
+      order: 3;
+      width: 100%;
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      -webkit-overflow-scrolling: touch;
     }
   }
 </style>
@@ -619,6 +633,52 @@ function isRailRouteType(routeType) {
   const n = parseInt(routeType, 10);
   if (Number.isNaN(n)) return false;
   return n === 2 || (n >= 100 && n < 200);
+}
+
+// Douglas-Peucker-förenkling: tar bort punkter längs en linje som ligger
+// väldigt nära den räta linjen mellan sina grannar, utan att den synliga
+// formen märkbart ändras. shapes.txt innehåller ofta hundratals punkter
+// per körväg — det mesta av dem bidrar inte till hur linjen faktiskt SER
+// ut på en karta i den här skalan, bara till hur mycket data webbläsaren
+// måste hantera. toleranceMeters är satt lågt (~8m) så det inte går att
+// se skillnad, bara kännas i prestandan.
+function simplifyPoints(points, toleranceMeters) {
+  if (points.length < 3) return points;
+
+  function perpendicularDistanceMeters(p, a, b) {
+    // Enkel planar approximation (bra nog på så här korta avstånd).
+    const latRef = (a[0] + b[0]) / 2;
+    const cosLat = Math.cos((latRef * Math.PI) / 180);
+    const mPerDegLat = 111320;
+    const ax = a[1] * cosLat * mPerDegLat, ay = a[0] * mPerDegLat;
+    const bx = b[1] * cosLat * mPerDegLat, by = b[0] * mPerDegLat;
+    const px = p[1] * cosLat * mPerDegLat, py = p[0] * mPerDegLat;
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+    const t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    const projX = ax + Math.max(0, Math.min(1, t)) * dx;
+    const projY = ay + Math.max(0, Math.min(1, t)) * dy;
+    return Math.hypot(px - projX, py - projY);
+  }
+
+  function simplifySegment(pts, tol) {
+    if (pts.length < 3) return pts;
+    let maxDist = 0, maxIdx = 0;
+    const a = pts[0], b = pts[pts.length - 1];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = perpendicularDistanceMeters(pts[i], a, b);
+      if (d > maxDist) { maxDist = d; maxIdx = i; }
+    }
+    if (maxDist > tol) {
+      const left = simplifySegment(pts.slice(0, maxIdx + 1), tol);
+      const right = simplifySegment(pts.slice(maxIdx), tol);
+      return left.slice(0, -1).concat(right);
+    }
+    return [a, b];
+  }
+
+  return simplifySegment(points, toleranceMeters);
 }
 
 function classifyColorForRoute(shortName, longName, routeType) {
@@ -1087,9 +1147,10 @@ async function loadRouteColors() {
       }
       for (const [shapeId, points] of raw) {
         points.sort((a, b) => a.seq - b.seq);
-        shapePointsById.set(shapeId, points.map((p) => [p.lat, p.lon]));
+        const simplified = simplifyPoints(points.map((p) => [p.lat, p.lon]), 8);
+        shapePointsById.set(shapeId, simplified);
       }
-      console.log(`Laddade ${shapePointsById.size} körvägar (shapes)`);
+      console.log(`Laddade ${shapePointsById.size} körvägar (shapes, förenklade)`);
     }
 
     // stops.txt (position för varje hållplats/station) — används för att
