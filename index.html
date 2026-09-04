@@ -380,6 +380,7 @@
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/protobufjs@7.2.6/dist/protobuf.min.js"></script>
 <script>
+console.time("⏱ TOTALT: skriptstart → första fordonet synligt");
 // ============================================================
 // KONFIGURATION – ändra detta
 // ============================================================
@@ -486,6 +487,7 @@ document.addEventListener("click", (e) => {
   }
 });
 
+console.time("⏱ script start → map-objekt skapat");
 const map = new maplibregl.Map({
   container: "map",
   style: "https://tiles.openfreemap.org/styles/liberty",
@@ -497,6 +499,7 @@ const map = new maplibregl.Map({
   touchPitch: false,
 });
 map.touchZoomRotate.disableRotation(); // samma sak för pekskärm/mobil
+console.timeEnd("⏱ script start → map-objekt skapat");
 map.addControl(new maplibregl.NavigationControl(), "top-right");
 map.addControl(
   new maplibregl.AttributionControl({
@@ -1437,12 +1440,18 @@ async function fetchVehiclePositions() {
   return entities;
 }
 
+let firstPollLogged = false;
 async function pollLoop() {
+  const isFirst = !firstPollLogged;
   try {
     const entities = await fetchVehiclePositions();
     updateVehicles(entities);
     const count = markers.size;
     setStatus("live", `live · ${count} fordon · uppdaterad ${new Date().toLocaleTimeString("sv-SE")}`);
+    if (isFirst) {
+      firstPollLogged = true;
+      console.timeEnd("⏱ TOTALT: skriptstart → första fordonet synligt");
+    }
   } catch (err) {
     console.error(err);
     setStatus("error", `kunde inte hämta data (${err.message})`);
@@ -1629,18 +1638,24 @@ async function updateResRobotDepartures() {
 }
 
 (async function init() {
+  console.time("⏱ init() start → loadProtoSchema klar");
   // OBS: väntar INTE på att kartstilen (100+ lager) ska bli klar innan vi
   // börjar hämta fordon — det är den STÖRSTA boven till den långa
   // väntetiden, inte GTFS-datan. Bussarna hämtas/visas nu helt parallellt
   // med att kartstilen laddar i bakgrunden.
   await loadProtoSchema(); // går snabbt — bara ett litet inbäddat schema, ingen nätverkshämtning
+  console.timeEnd("⏱ init() start → loadProtoSchema klar");
   pollLoop(); // fordon börjar dyka upp nästan direkt
 
   const mapReady = whenMapLoaded().then(() => {
+    console.timeEnd("⏱ init() start → kartstilen (whenMapLoaded) klar");
     applyDarkTheme();
     highlightSkaneRailLines();
     removeUnneededLayers();
+    console.timeEnd("⏱ init() start → applyDarkTheme+removeUnneededLayers klara");
   });
+  console.time("⏱ init() start → kartstilen (whenMapLoaded) klar");
+  console.time("⏱ init() start → applyDarkTheme+removeUnneededLayers klara");
 
   const routesReady = loadRouteColors(); // den tunga statiska datan, hämtas parallellt
 
