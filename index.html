@@ -471,8 +471,23 @@ function whenMapLoaded() {
   });
 }
 
-map.on("movestart", () => mapContainer.classList.add("map-moving"));
-map.on("moveend", () => mapContainer.classList.remove("map-moving"));
+// Stänger av glidnings-transitionen DIREKT via inline style på varje
+// markör (inte bara via en CSS-klass) så snart kartan börjar
+// panorera/zooma — annars kan MapLibres egna, momentana
+// positionsomräkningar vid zoom krocka med vår långsamma CSS-transition
+// och få markörerna att "släpa efter" och hamna fel under/efter zoom.
+map.on("movestart", () => {
+  mapContainer.classList.add("map-moving");
+  for (const entry of markers.values()) {
+    entry.el.style.transitionProperty = "none";
+  }
+});
+map.on("moveend", () => {
+  mapContainer.classList.remove("map-moving");
+  for (const entry of markers.values()) {
+    entry.el.style.transitionProperty = "transform";
+  }
+});
 
 map.on("zoomend", () => {
   for (const entry of markers.values()) {
