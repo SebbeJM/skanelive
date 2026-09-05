@@ -6,7 +6,6 @@
 <title>Skåne Live – realtidskarta över kollektivtrafiken</title>
 <meta name="description" content="Live-data över kollektivtrafiken i Skåne Län — se bussar och tåg röra sig i realtid på kartan.">
 <link rel="canonical" href="https://skånelive.se/">
-
 <!-- Open Graph — hur länken ser ut när den delas i t.ex. Messenger, Slack, iMessage, Discord -->
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://skånelive.se/">
@@ -16,7 +15,6 @@
 <meta property="og:image" content="https://skånelive.se/images/og-preview.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-
 <!-- Twitter/X-kort -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://skånelive.se/images/og-preview.png">
@@ -36,9 +34,7 @@
     --accent: #ff8552;
     --accent-dim: #c9612f;
   }
-
   * { box-sizing: border-box; }
-
   html, body {
     margin: 0;
     height: 100%;
@@ -46,13 +42,11 @@
     color: var(--fg);
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   }
-
   #app {
     display: grid;
     grid-template-rows: auto 1fr;
     height: 100%;
   }
-
   header {
     position: relative;
     display: flex;
@@ -63,7 +57,6 @@
     border-bottom: 1px solid var(--line);
     background: var(--panel);
   }
-
   .header-title {
     display: flex;
     align-items: baseline;
@@ -71,14 +64,12 @@
     flex-shrink: 0;
     white-space: nowrap;
   }
-
   header h1 {
     margin: 0;
     font-size: 1.15rem;
     font-weight: 600;
     letter-spacing: 0.01em;
   }
-
   .subtitle {
     margin: 0;
     font-size: 0.92rem;
@@ -86,13 +77,11 @@
     color: var(--fg);
     white-space: nowrap;
   }
-
   header h1 span {
     color: var(--accent);
   }
   .title-skane { color: #c8102e; }
   .title-live { color: #f5c400; }
-
   #status {
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 0.78rem;
@@ -100,7 +89,6 @@
     text-align: right;
     line-height: 1.4;
   }
-
   #status .dot {
     display: inline-block;
     width: 7px;
@@ -109,14 +97,12 @@
     background: var(--muted);
     margin-right: 0.4em;
   }
-
   .header-right {
     display: flex;
     align-items: center;
     gap: 0.9rem;
     flex-shrink: 0;
   }
-
   #contact-btn {
     flex-shrink: 0;
     padding: 0.4rem 0.9rem;
@@ -130,7 +116,6 @@
   #contact-btn:hover {
     border-color: var(--muted);
   }
-
   #menu-btn {
     display: none;
     background: none;
@@ -145,7 +130,6 @@
   #menu-btn:hover {
     border-color: var(--muted);
   }
-
   #mobile-menu {
     display: none;
     position: absolute;
@@ -173,35 +157,23 @@
   #mobile-menu a:hover {
     background: var(--bg);
   }
-
   #status.live .dot {
     background: #3ecf8e;
   }
-
   #status.error .dot {
     background: var(--accent);
   }
-
   #map {
     width: 100%;
     height: 100%;
     background: var(--bg);
   }
-
-  /* Ljusare ortsnamn (Malmö, Staffanstorp osv.) — bara detta tile-lager
-     ljusas upp, resten av kartan (vägar, vatten osv.) är opåverkad. */
   .place-labels-layer {
     filter: brightness(1.6);
   }
-
-  /* Väldigt mild ljusstyrke-höjning på hela baskartan (vägar, vatten osv.)
-     — går tyvärr inte att bara ljusa upp vägarna specifikt med färdiga
-     bildplattor (rastertiles), det kräver vektor-tiles med lagerkontroll
-     som vi hade tidigare. Detta är den bästa kompromissen. */
   .base-map-layer {
     filter: brightness(1.12);
   }
-
   .vehicle-marker {
     transition: transform 6.5s linear;
     will-change: transform;
@@ -209,7 +181,6 @@
   .leaflet-container.map-moving .vehicle-marker {
     transition: none !important;
   }
-
   @keyframes vehicle-jitter {
     0%   { transform: translate(0, 0); }
     20%  { transform: translate(0.18px, -0.12px); }
@@ -221,7 +192,6 @@
   .vehicle-icon.moving {
     animation: vehicle-jitter 0.9s steps(5) infinite;
   }
-
   .vehicle-icon {
     display: flex;
     align-items: center;
@@ -247,7 +217,6 @@
       -1px  1px 0 #000,
        1px  1px 0 #000;
   }
-
   .train-station-icon {
     display: flex;
     align-items: center;
@@ -260,7 +229,6 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.6);
     color: #8a7fd6;
   }
-
   .leaflet-popup-content-wrapper {
     border-radius: 4px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -285,6 +253,80 @@
     right: 0;
   }
 
+  /* === Följ-knapp i popup === */
+  .follow-btn {
+    display: block;
+    width: 100%;
+    margin-top: 0.55rem;
+    padding: 0.38rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: #1a1a1a;
+    color: var(--fg);
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .follow-btn:hover {
+    border-color: var(--accent);
+    background: #222;
+  }
+
+  /* === HUD nere i mitten === */
+  #follow-hud {
+    display: none;
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1100;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.75rem 1.1rem;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.55);
+    max-width: 92vw;
+    min-width: 280px;
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+  #follow-hud.visible {
+    display: block;
+  }
+  .follow-hud-inner {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  #follow-hud-text {
+    flex: 1;
+    min-width: 0;
+  }
+  #follow-hud-text b {
+    display: block;
+    margin-bottom: 0.15em;
+    font-size: 0.92rem;
+  }
+  #follow-hud-close {
+    flex-shrink: 0;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: #1a1a1a;
+    color: var(--fg);
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #follow-hud-close:hover {
+    border-color: var(--accent);
+    background: #222;
+  }
+
   #config-banner {
     position: absolute;
     z-index: 1000;
@@ -300,7 +342,6 @@
     font-size: 0.78rem;
     max-width: 90vw;
   }
-
   #legend-inline {
     display: flex;
     align-items: center;
@@ -321,7 +362,6 @@
     border-radius: 50%;
     flex-shrink: 0;
   }
-
   #visitor-stats {
     display: flex;
     align-items: center;
@@ -340,7 +380,6 @@
     color: var(--fg);
     font-weight: 600;
   }
-
   @media (max-width: 700px) {
     .subtitle {
       display: none;
@@ -401,9 +440,16 @@
   </header>
   <div style="position: relative; height: 100%;">
     <div id="map"></div>
+
+    <!-- Fast HUD för följd resa -->
+    <div id="follow-hud">
+      <div class="follow-hud-inner">
+        <div id="follow-hud-text"></div>
+        <button id="follow-hud-close">Sluta följa</button>
+      </div>
+    </div>
   </div>
 </div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/protobufjs@7.2.6/dist/protobuf.min.js"></script>
 <script>
@@ -412,62 +458,45 @@ console.time("⏱ TOTALT: skriptstart → första fordonet synligt");
 // KONFIGURATION – ändra detta
 // ============================================================
 const PROXY_URL = "https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev";
-// De tre färdiga JSON-filerna byggs av ett gratis GitHub Actions-schema
-// en gång per natt (se build-gtfs.js och .github/workflows/build-gtfs.yml)
-// och ligger i samma repo som den här sidan — mycket snabbare än att
-// packa upp/tolka hela GTFS-zippen (flera MB CSV) i webbläsaren, vilket
-// vi gjorde tidigare, och helt gratis (ingen Cloudflare-betalplan behövs).
 const TRIP_LOOKUP_URL = "data/trip_lookup.json";
 const RAIL_LINES_URL = "data/rail_lines.json";
 const TRAIN_STATIONS_URL = "data/train_stations.json";
-
-// Gratis Carto-nyckel (carto.com/basemaps/apikey) för Cartos RIKTIGA Dark
-// Matter-rastertiles.
 const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
-
 const POLL_INTERVAL_MS = 7000;
-const MAP_CENTER = [55.605, 12.9998]; // centrerad över Malmö vid start
+const MAP_CENTER = [55.605, 12.9998];
 const MAP_ZOOM = 10.5;
-
 // ============================================================
 // Minimal GTFS-Realtime protobuf-schema
 // ============================================================
 const GTFS_RT_PROTO = `
 syntax = "proto2";
 package transit_realtime;
-
 message FeedMessage {
   required FeedHeader header = 1;
   repeated FeedEntity entity = 2;
 }
-
 message FeedHeader {
   required string gtfs_realtime_version = 1;
   optional uint64 timestamp = 3;
 }
-
 message FeedEntity {
   required string id = 1;
   optional VehiclePosition vehicle = 4;
 }
-
 message VehiclePosition {
   optional TripDescriptor trip = 1;
   optional VehicleDescriptor vehicle = 8;
   optional Position position = 2;
   optional uint64 timestamp = 5;
 }
-
 message TripDescriptor {
   optional string trip_id = 1;
   optional string route_id = 5;
 }
-
 message VehicleDescriptor {
   optional string id = 1;
   optional string label = 2;
 }
-
 message Position {
   required float latitude = 1;
   required float longitude = 2;
@@ -475,12 +504,10 @@ message Position {
   optional float speed = 5;
 }
 `;
-
 // ============================================================
 // Karta — Leaflet + Cartos riktiga Dark Matter-rastertiles
 // ============================================================
 const mapContainer = document.getElementById("map");
-
 const menuBtn = document.getElementById("menu-btn");
 const mobileMenu = document.getElementById("mobile-menu");
 menuBtn.addEventListener("click", (e) => {
@@ -494,7 +521,6 @@ document.addEventListener("click", (e) => {
     menuBtn.setAttribute("aria-expanded", "false");
   }
 });
-
 console.time("⏱ script start → map-objekt skapat");
 const map = L.map("map", {
   center: MAP_CENTER,
@@ -502,10 +528,6 @@ const map = L.map("map", {
   zoomControl: true,
   attributionControl: true,
 });
-// Basen (utan ortsnamn) och etiketterna som ett SEPARAT lager ovanpå —
-// Cartos egna "nolabels"/"only_labels"-varianter, tänkta att kombineras
-// så här. Låter oss ljusa upp bara ortsnamnen (se CSS-klassen
-// "place-labels-layer") utan att påverka resten av kartan.
 L.tileLayer(
   `https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
   {
@@ -522,31 +544,95 @@ L.tileLayer(
   }
 ).addTo(map);
 console.timeEnd("⏱ script start → map-objekt skapat");
-
 if (CARTO_API_KEY.includes("DIN_CARTO_NYCKEL")) {
   const banner = document.createElement("div");
   banner.id = "config-banner";
   banner.textContent = "⚠ Sätt CARTO_API_KEY i index.html till din egen nyckel (carto.com/basemaps/apikey)";
   document.querySelector("#app > div").appendChild(banner);
 }
-
 map.on("movestart", () => mapContainer.classList.add("map-moving"));
 map.on("moveend", () => mapContainer.classList.remove("map-moving"));
-
 map.on("zoomend", () => {
   for (const entry of markers.values()) {
     entry.marker.setIcon(makeDivIcon(entry.tripInfo, entry.moving));
   }
 });
-
 map.on("click", () => {
   for (const entry of markers.values()) {
     if (entry.pinned) {
       entry.pinned = false;
-      entry.popup.setContent(renderPopupHtml(entry.popupBaseHtml, false));
+      entry.popup.setContent(renderPopupHtml(entry.popupBaseHtml, false, entry.id));
       map.closePopup(entry.popup);
     }
   }
+});
+
+// ============================================================
+// Följ-resan + HUD
+// ============================================================
+let followedId = null;
+const FOLLOW_ZOOM = 16;
+const followHud = document.getElementById("follow-hud");
+const followHudText = document.getElementById("follow-hud-text");
+const followHudClose = document.getElementById("follow-hud-close");
+
+followHudClose.addEventListener("click", (e) => {
+  e.stopPropagation();
+  stopFollow();
+});
+
+window.startFollow = function(id) {
+  const entry = markers.get(id);
+  if (!entry) return;
+
+  // Stäng alla popups
+  map.closePopup();
+  for (const e of markers.values()) {
+    e.pinned = false;
+  }
+
+  followedId = id;
+
+  // Visa HUD och fyll med info
+  updateFollowHud(entry);
+  followHud.classList.add("visible");
+
+  // Zooma in och centrera mjukt
+  map.flyTo(entry.marker.getLatLng(), FOLLOW_ZOOM, {
+    duration: 1.4,
+    easeLinearity: 0.2
+  });
+};
+
+function stopFollow() {
+  if (!followedId) return;
+  followedId = null;
+  followHud.classList.remove("visible");
+  followHudText.innerHTML = "";
+}
+
+function updateFollowHud(entry) {
+  if (!entry) return;
+  const tripInfo = entry.tripInfo;
+  const displayName = (tripInfo && tripInfo.line) || "okänd";
+  const destination = (tripInfo && tripInfo.destination) || "";
+  const speedText = entry.lastSpeed != null
+    ? Math.round(entry.lastSpeed * 3.6) + " km/h"
+    : "okänd";
+
+  const title = lineLabelFor(tripInfo, displayName);
+  followHudText.innerHTML = `
+    <b>Nu följs: ${title}</b>
+    ${destination ? `På väg mot: ${destination}<br>` : ""}
+    Hastighet: ${speedText}
+  `;
+}
+
+// Avbryt följning om användaren själv drar/zoomar
+map.on("dragstart", stopFollow);
+map.on("zoomstart", (e) => {
+  // Undvik att avbryta vår egen flyTo
+  if (!e.target._animatingZoom) stopFollow();
 });
 
 const statusEl = document.getElementById("status");
@@ -554,33 +640,20 @@ function setStatus(state, text) {
   statusEl.className = state;
   statusEl.innerHTML = `<span class="dot"></span>${text}`;
 }
-
 // ============================================================
 // Klassificering & färger
 // ============================================================
-// OBS: all färgklassificering och Douglas-Peucker-förenkling görs numera
-// på SERVERN (i worker.js, en gång per natt) — se trip_lookup.json,
-// rail_lines.json och train_stations.json. isRailRouteType behövs bara
-// kvar här för CSS-klassen på markören (se markerClassName nedan).
 function isRailRouteType(routeType) {
   const n = parseInt(routeType, 10);
   if (Number.isNaN(n)) return false;
   return n === 2 || (n >= 100 && n < 200);
 }
-
 // ============================================================
 // Statisk linjedata
 // ============================================================
-// Nyckeln är trip_id direkt (inte route_id) — matchar exakt vad
-// realtidsflödet faktiskt ger oss, ingen extra koppling behövs.
 const tripInfoByTripId = new Map();
-
 const routeLinesRenderer = L.canvas({ padding: 0.5 });
 const routeLinesLayer = L.layerGroup().addTo(map);
-
-// Ritar ALLA tåglinjer direkt från den redan färdiga (server-byggda)
-// rail_lines.json — ingen egen förenkling/filtrering behövs klientsidan
-// längre, servern har redan gjort det jobbet en gång för alla.
 function drawAllRailLines(lines) {
   for (const line of lines) {
     L.polyline(line.points, {
@@ -592,39 +665,41 @@ function drawAllRailLines(lines) {
     }).addTo(routeLinesLayer);
   }
 }
-
 // ============================================================
 // Fordonsmarkörer
 // ============================================================
 const markers = new Map();
-// Blir true först när loadRouteColors() (trip_lookup.json m.fl.) är klar —
-// se updateVehicles() för varför detta styr "okänd"-filtret.
 let staticDataLoaded = false;
-
 const ZOOM_LABEL_THRESHOLD = 12;
 function shouldShowLabels() {
   return map.getZoom() >= ZOOM_LABEL_THRESHOLD;
 }
-
 function iconSizeForZoom() {
   const minSize = 10, maxSize = 22, minZoom = 8, maxZoom = 13;
   const z = map.getZoom();
   const t = Math.max(0, Math.min(1, (z - minZoom) / (maxZoom - minZoom)));
   return Math.round(minSize + (maxSize - minSize) * t);
 }
-
 const PIN_ICON_SVG = `<span class="popup-pin"><svg viewBox="0 0 24 24" width="11" height="11" fill="#ffffff"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg></span>`;
+function renderPopupHtml(baseHtml, pinned, id) {
+  let html = pinned
+    ? baseHtml.replace('<div class="popup-content">', `<div class="popup-content">${PIN_ICON_SVG}`)
+    : baseHtml;
 
-function renderPopupHtml(baseHtml, pinned) {
-  return pinned ? baseHtml.replace("<div class=\"popup-content\">", `<div class="popup-content">${PIN_ICON_SVG}`) : baseHtml;
+  // Visa inte "Följ resan"-knappen om vi redan följer detta fordon
+  if (followedId === id) return html;
+
+  html = html.replace(
+    '</div>',
+    `<button class="follow-btn" onclick="event.stopPropagation(); window.startFollow('${id}')">Följ resan</button></div>`
+  );
+  return html;
 }
-
 function lineLabelFor(tripInfo, displayName) {
   if (tripInfo && tripInfo.brand === "oresundstag") return `Öresundståg ${displayName}`;
   if (tripInfo && tripInfo.brand === "pagatag") return `Pågatåg ${displayName}`;
   return `Linje ${displayName}`;
 }
-
 function iconHtml(tripInfo, moving) {
   const hasColor = tripInfo && tripInfo.color;
   const bg = hasColor ? `#${tripInfo.color}` : null;
@@ -638,11 +713,9 @@ function iconHtml(tripInfo, moving) {
   const labelHtml = shouldShowLabels() ? `<span class="label">${label}</span>` : "";
   return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
 }
-
 function markerClassName(tripInfo) {
   return `vehicle-marker${tripInfo && isRailRouteType(tripInfo.type) ? " rail" : ""}`;
 }
-
 function makeDivIcon(tripInfo, moving) {
   const size = iconSizeForZoom();
   return L.divIcon({
@@ -652,47 +725,32 @@ function makeDivIcon(tripInfo, moving) {
     iconAnchor: [size / 2, size / 2],
   });
 }
-
 function updateVehicles(entities) {
   const seenIds = new Set();
-
   for (const entity of entities) {
     const vp = entity.vehicle;
     if (!vp || !vp.position) continue;
-
     const id = (vp.vehicle && (vp.vehicle.id || vp.vehicle.label)) || entity.id;
-
     const lat = vp.position.latitude;
     const lon = vp.position.longitude;
     const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
-    // Trip_lookup.json är nyckeln direkt på trip_id — ingen extra koppling
-    // via route_id behövs längre, servern har redan gjort den kopplingen.
     const tripInfo = tripInfoByTripId.get(tripId);
     const displayName = (tripInfo && tripInfo.line) || tripId || "okänd";
     const isMoving = vp.position.speed != null && vp.position.speed > 0.5;
-
-    // Filtrera bara bort "okända" fordon EFTER att den statiska datan
-    // (trip_lookup.json) hunnit laddas klart. Innan dess skulle filtret
-    // annars dölja ALLA fordon, och sidan skulle se helt tom ut i onödan
-    // tills den (numera snabba) uppslagstabellen laddat klart.
     if (staticDataLoaded && displayName === "okänd") {
       continue;
     }
-
     seenIds.add(id);
-
     const destination = (tripInfo && tripInfo.destination) || "";
-
+    const speed = vp.position.speed;
     const popupHtml = `
       <div class="popup-content">
         <b>${lineLabelFor(tripInfo, displayName)}</b>
         ${destination ? `På väg mot: ${destination}<br>` : ""}
-        Hastighet: ${vp.position.speed != null ? Math.round(vp.position.speed * 3.6) + " km/h" : "okänd"}
+        Hastighet: ${speed != null ? Math.round(speed * 3.6) + " km/h" : "okänd"}
       </div>
     `;
-
     const iconKey = `${(tripInfo && tripInfo.color) || ""}|${displayName}|${shouldShowLabels()}|${isMoving}`;
-
     if (markers.has(id)) {
       const entry = markers.get(id);
       if (entry.iconKey !== iconKey) {
@@ -701,6 +759,7 @@ function updateVehicles(entities) {
       }
       entry.tripInfo = tripInfo;
       entry.moving = isMoving;
+      entry.lastSpeed = speed;
       const now = Date.now();
       const elapsed = entry.lastUpdateTime ? now - entry.lastUpdateTime : POLL_INTERVAL_MS;
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
@@ -708,21 +767,40 @@ function updateVehicles(entities) {
       if (el) el.style.transitionDuration = `${clamped}ms`;
       entry.lastUpdateTime = now;
       entry.popupBaseHtml = popupHtml;
+      entry.id = id;
       if (map.hasLayer(entry.popup)) entry.popup.setLatLng([lat, lon]);
       entry.marker.setLatLng([lat, lon]);
-      entry.popup.setContent(renderPopupHtml(popupHtml, entry.pinned));
+
+      // Uppdatera popup bara om den inte är stängd pga följning
+      if (followedId !== id) {
+        entry.popup.setContent(renderPopupHtml(popupHtml, entry.pinned, id));
+      }
+
+      // === SMOOTH FÖLJNING + uppdatera HUD ===
+      if (followedId === id) {
+        updateFollowHud(entry);
+        map.panTo([lat, lon], {
+          animate: true,
+          duration: 2.8,
+          easeLinearity: 0.12,
+          noMoveStart: true
+        });
+        if (Math.abs(map.getZoom() - FOLLOW_ZOOM) > 0.4) {
+          map.setZoom(FOLLOW_ZOOM, { animate: true });
+        }
+      }
     } else {
       const marker = L.marker([lat, lon], { icon: makeDivIcon(tripInfo, isMoving) }).addTo(map);
       const popup = L.popup({ offset: [0, -14], closeButton: false, autoClose: false, closeOnClick: false })
         .setContent(popupHtml);
-
       const newEntry = {
         marker, popup, iconKey, tripInfo, moving: isMoving,
         lastUpdateTime: Date.now(), pinned: false, popupBaseHtml: popupHtml,
+        id: id, lastSpeed: speed
       };
       markers.set(id, newEntry);
-
       marker.on("mouseover", () => {
+        if (followedId === id) return; // visa inte popup medan vi följer
         popup.setLatLng(marker.getLatLng());
         popup.openOn(map);
       });
@@ -731,8 +809,9 @@ function updateVehicles(entities) {
       });
       marker.on("click", (e) => {
         L.DomEvent.stopPropagation(e);
+        if (followedId === id) return;
         newEntry.pinned = !newEntry.pinned;
-        popup.setContent(renderPopupHtml(newEntry.popupBaseHtml, newEntry.pinned));
+        popup.setContent(renderPopupHtml(newEntry.popupBaseHtml, newEntry.pinned, id));
         if (newEntry.pinned) {
           popup.setLatLng(marker.getLatLng());
           popup.openOn(map);
@@ -742,31 +821,23 @@ function updateVehicles(entities) {
       });
     }
   }
-
   for (const [id, entry] of markers.entries()) {
     if (!seenIds.has(id)) {
+      if (followedId === id) stopFollow();
       map.removeLayer(entry.marker);
       map.closePopup(entry.popup);
       markers.delete(id);
     }
   }
 }
-
 // ============================================================
 // Hämta och tolka protobuf-data
 // ============================================================
 let FeedMessageType = null;
-
 async function loadProtoSchema() {
   const root = protobuf.parse(GTFS_RT_PROTO).root;
   FeedMessageType = root.lookupType("transit_realtime.FeedMessage");
 }
-
-// ============================================================
-// Statisk linjedata — tre färdiga, servergenererade JSON-filer i stället
-// för att packa upp/tolka hela GTFS-zippen (flera MB CSV) själv. Se
-// worker.js för hur dessa byggs (en gång per natt).
-// ============================================================
 async function loadRouteColors() {
   try {
     const [tripLookupRes, railLinesRes, stationsRes] = await Promise.all([
@@ -777,25 +848,20 @@ async function loadRouteColors() {
     if (!tripLookupRes.ok) throw new Error(`trip_lookup.json: HTTP ${tripLookupRes.status}`);
     if (!railLinesRes.ok) throw new Error(`rail_lines.json: HTTP ${railLinesRes.status}`);
     if (!stationsRes.ok) throw new Error(`train_stations.json: HTTP ${stationsRes.status}`);
-
     const tripLookup = await tripLookupRes.json();
     const railLinesData = await railLinesRes.json();
     const stationsData = await stationsRes.json();
-
     for (const [tripId, info] of Object.entries(tripLookup.trips)) {
       tripInfoByTripId.set(tripId, info);
     }
     console.log(`Laddade uppslagstabell för ${tripInfoByTripId.size} resor (byggd ${tripLookup.builtAt})`);
-
     drawAllRailLines(railLinesData.lines);
     console.log(`Ritade ${railLinesData.lines.length} tåglinjer`);
-
     drawRealTrainStations(stationsData.stations);
   } catch (err) {
     console.warn("Kunde inte ladda den servergenererade linjedatan:", err);
   }
 }
-
 async function fetchVehiclePositions() {
   const res = await fetch(PROXY_URL, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -804,11 +870,7 @@ async function fetchVehiclePositions() {
   const obj = FeedMessageType.toObject(message, { defaults: true });
   return obj.entity || [];
 }
-
 let firstPollLogged = false;
-// Sparar den senaste hämtade fordonslistan, så vi kan rita om markörerna
-// direkt när den statiska linjedatan (färger m.m.) blir klar — i stället
-// för att behöva vänta på nästa schemalagda hämtning (upp till 7 sekunder).
 let lastEntities = null;
 async function pollLoop() {
   const isFirst = !firstPollLogged;
@@ -829,10 +891,8 @@ async function pollLoop() {
     setTimeout(pollLoop, POLL_INTERVAL_MS);
   }
 }
-
 // ============================================================
-// ============================================================
-// Riktiga tågstationer, hämtade direkt från Trafiklabs data
+// Riktiga tågstationer
 // ============================================================
 const TRAIN_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="13" height="13">
@@ -843,13 +903,10 @@ const TRAIN_ICON_SVG = `
     <circle cx="15.5" cy="19" r="1.8" fill="currentColor"/>
   </svg>
 `;
-
 const trainStationMarkers = new Map();
-
 function drawRealTrainStations(stations) {
   for (const s of stations) {
     if (!s.name) continue;
-
     const icon = L.divIcon({
       className: "train-station-marker",
       html: `<div class="train-station-icon">${TRAIN_ICON_SVG}</div>`,
@@ -859,18 +916,15 @@ function drawRealTrainStations(stations) {
     const marker = L.marker([s.lat, s.lon], { icon }).addTo(map);
     const popup = L.popup({ offset: [0, -12] }).setContent(`<div class="popup-content"><b>${s.name}</b></div>`);
     marker.bindPopup(popup);
-
     trainStationMarkers.set(s.name, { popup });
   }
   console.log(`Ritade ${trainStationMarkers.size} riktiga tågstationer från Trafiklabs data`);
 }
-
 // ============================================================
-// ResRobot — riktiga avgångstider (med förseningar) för tågstationerna
+// ResRobot
 // ============================================================
 const STATION_EXT_IDS = {
 };
-
 window.lookupStationId = async function (name) {
   const res = await fetch(`${PROXY_URL}/resrobot/stops?name=${encodeURIComponent(name)}`, { cache: "no-store" });
   if (!res.ok) {
@@ -887,7 +941,6 @@ window.lookupStationId = async function (name) {
     })
   );
 };
-
 function formatDeparture(dep) {
   const line = (dep.Product && (dep.Product.num || dep.Product.name)) || dep.transportNumber || "?";
   const dir = dep.direction || (dep.Stops && "") || "";
@@ -895,13 +948,11 @@ function formatDeparture(dep) {
   const delayed = Boolean(dep.rtTime && dep.time && dep.rtTime !== dep.time);
   return `${line} → ${dir}: ${time}${delayed ? " (försenad)" : ""}`;
 }
-
 async function updateResRobotDepartures() {
   for (const [stationName, extId] of Object.entries(STATION_EXT_IDS)) {
     if (!extId) continue;
     const entry = trainStationMarkers.get(stationName);
     if (!entry) continue;
-
     try {
       const res = await fetch(`${PROXY_URL}/resrobot/departures?id=${encodeURIComponent(extId)}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -914,20 +965,16 @@ async function updateResRobotDepartures() {
     } catch (err) {
       console.warn(`Kunde inte hämta avgångar för ${stationName}:`, err.message);
     }
-
     await new Promise((r) => setTimeout(r, 300));
   }
 }
-
 // ============================================================
-// Besöksräknare (idag + denna månad)
-// Anropar din egen Worker: GET /counter  → { today, month }
+// Besöksräknare
 // ============================================================
 async function loadVisitorStats() {
   const todayEl = document.getElementById("visitors-today");
   const monthEl = document.getElementById("visitors-month");
   if (!todayEl || !monthEl) return;
-
   try {
     const res = await fetch(`${PROXY_URL}/counter`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -940,22 +987,15 @@ async function loadVisitorStats() {
     monthEl.textContent = "–";
   }
 }
-
 (async function init() {
   console.time("⏱ init() start → loadProtoSchema klar");
   await loadProtoSchema();
   console.timeEnd("⏱ init() start → loadProtoSchema klar");
   pollLoop();
-  loadVisitorStats(); // hämta besökssiffror parallellt
-
+  loadVisitorStats();
   loadRouteColors().then(() => {
     staticDataLoaded = true;
-    // Uppdatera direkt med de senast kända fordonspositionerna, i stället
-    // för att vänta på nästa schemalagda hämtning (upp till 7 sekunder
-    // bort) — det var orsaken till att bussarna kändes lite långsamma
-    // att få rätt färg, trots att själva färgdatan redan var klar.
     if (lastEntities) updateVehicles(lastEntities);
-
     if (Object.values(STATION_EXT_IDS).some(Boolean)) {
       updateResRobotDepartures();
       setInterval(updateResRobotDepartures, 90000);
