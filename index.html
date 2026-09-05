@@ -599,17 +599,33 @@ window.startFollow = function(id) {
   followedId = id;
   updateFollowHud(entry);
   followHud.classList.add("visible");
-  beginProgrammaticCameraMove();
+  beginProgrammaticCameraMove(900);
   map.flyTo(entry.marker.getLatLng(), FOLLOW_ZOOM, {
-    duration: 1.4,
-    easeLinearity: 0.2
+    duration: 0.9,
+    easeLinearity: 0.35
   });
 };
 
 function stopFollow() {
   if (!followedId) return;
-  console.log(`⏱ Slutar följa ${followedId}`);
+  const previouslyFollowedId = followedId;
   followedId = null;
+
+  // Avbryt EVENTUELL pågående kamera-animation (panorering/zoom) direkt
+  // — annars fortsätter den bara köra klart i bakgrunden ändå, och man
+  // "teleporteras" plötsligt några sekunder senare till dit den redan
+  // var på väg, trots att man tänkte sig ha stoppat följningen.
+  map.stop();
+  programmaticCameraMove = false;
+  clearTimeout(programmaticMoveResetTimer);
+
+  // Tvinga bort popup-rutan direkt, om den mot förmodan skulle vara
+  // öppen — utan att förlita oss på Leaflets "vilken är den aktiva
+  // popupen"-gissning.
+  const prevEntry = markers.get(previouslyFollowedId);
+  if (prevEntry) map.closePopup(prevEntry.popup);
+  map.closePopup();
+
   followHud.classList.remove("visible");
   followHudText.innerHTML = "";
 }
