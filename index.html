@@ -577,6 +577,12 @@ const routeLinesLayer = L.layerGroup().addTo(map);
 
 function ensureRouteShapeDrawn(routeId, routeInfo) {
   if (!routeId || drawnRouteShapes.has(routeId)) return;
+  // Om vi saknar routeInfo (routesById) helt beror det oftast bara på att
+  // den statiska datan inte hunnit laddas än — INTE på att linjen faktiskt
+  // saknar info. Vänta med att markera "klar" tills vi antingen vet
+  // (routeInfo finns) eller den statiska datan är helt klar och vi
+  // fortfarande inte hittar något (då vet vi definitivt att den saknas).
+  if (!routeInfo && !staticDataLoaded) return;
   if (!routeInfo || !isRailRouteType(routeInfo.routeType)) {
     drawnRouteShapes.add(routeId);
     return;
@@ -614,6 +620,9 @@ function drawAllRailLines() {
 // Fordonsmarkörer
 // ============================================================
 const markers = new Map();
+// Blir true först när loadRouteColors() (trips.txt m.fl.) är klar — se
+// updateVehicles() för varför detta styr "okänd"-filtret.
+let staticDataLoaded = false;
 
 const ZOOM_LABEL_THRESHOLD = 12;
 function shouldShowLabels() {
@@ -687,7 +696,12 @@ function updateVehicles(entities) {
     const displayName = (routeInfo && routeInfo.shortName) || routeId || "okänd";
     const isMoving = vp.position.speed != null && vp.position.speed > 0.5;
 
-    if (displayName === "okänd") {
+    // Filtrera bara bort "okända" fordon EFTER att den statiska datan
+    // (trips.txt m.fl.) hunnit laddas klart. Innan dess skulle filtret
+    // annars dölja ALLA fordon (eftersom linjenumret kommer just därifrån),
+    // och sidan skulle se helt tom ut i onödan tills den tunga datan är
+    // klar — även om själva bussarna redan hämtats för länge sedan.
+    if (staticDataLoaded && displayName === "okänd") {
       continue;
     }
 
@@ -1139,6 +1153,7 @@ async function updateResRobotDepartures() {
   pollLoop();
 
   loadRouteColors().then(() => {
+    staticDataLoaded = true;
     drawAllRailLines();
     drawRealTrainStations();
 
