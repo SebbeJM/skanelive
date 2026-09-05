@@ -4,6 +4,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Skåne Live – realtidskarta över kollektivtrafiken</title>
+<meta name="description" content="Live-data över kollektivtrafiken i Skåne Län — se bussar och tåg röra sig i realtid på kartan.">
+<link rel="canonical" href="https://skånelive.se/">
+
+<!-- Open Graph — hur länken ser ut när den delas i t.ex. Messenger, Slack, iMessage, Discord -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://skånelive.se/">
+<meta property="og:title" content="Skåne Live">
+<meta property="og:description" content="Live-data över kollektivtrafiken i Skåne Län — se bussar och tåg röra sig i realtid på kartan.">
+<meta property="og:locale" content="sv_SE">
+<meta property="og:image" content="https://skånelive.se/images/og-preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<!-- Twitter/X-kort -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://skånelive.se/images/og-preview.png">
+<meta name="twitter:title" content="Skåne Live">
+<meta name="twitter:description" content="Live-data över kollektivtrafiken i Skåne Län — se bussar och tåg röra sig i realtid på kartan.">
 <link rel="preconnect" href="https://unpkg.com" crossorigin>
 <link rel="preconnect" href="https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev">
 <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin>
@@ -174,6 +192,14 @@
      ljusas upp, resten av kartan (vägar, vatten osv.) är opåverkad. */
   .place-labels-layer {
     filter: brightness(1.6);
+  }
+
+  /* Väldigt mild ljusstyrke-höjning på hela baskartan (vägar, vatten osv.)
+     — går tyvärr inte att bara ljusa upp vägarna specifikt med färdiga
+     bildplattor (rastertiles), det kräver vektor-tiles med lagerkontroll
+     som vi hade tidigare. Detta är den bästa kompromissen. */
+  .base-map-layer {
+    filter: brightness(1.12);
   }
 
   .vehicle-marker {
@@ -455,6 +481,7 @@ L.tileLayer(
   `https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
   {
     maxZoom: 20,
+    className: "base-map-layer",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare &copy; <a href="https://carto.com/attributions">CARTO</a>',
   }
 ).addTo(map);
