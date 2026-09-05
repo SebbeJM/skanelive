@@ -490,6 +490,9 @@ message Position {
 }
 `;
 const mapContainer = document.getElementById("map");
+// True medan användaren aktivt drar i kartan — se
+// isWithinRenderBounds-logiken i updateVehicles() för varför.
+let isDragging = false;
 const menuBtn = document.getElementById("menu-btn");
 const mobileMenu = document.getElementById("mobile-menu");
 menuBtn.addEventListener("click", (e) => {
@@ -571,7 +574,10 @@ function enableMarkerTransitions() {
 // riktig rörelse, vilket gav en störande "stannar-flyger-pausar"-
 // effekt. Fryser därför glidningen under HELA kamerarörelsen (både
 // panorering och zoom), inte bara zoom.
-map.on("movestart", disableMarkerTransitions);
+// Bara ZOOM behöver frysa glidningen (Leaflets egen dokumentation
+// bekräftar att panorering INTE räknar om enskilda ikoners position —
+// bara zoom gör det). Se i stället isWithinRenderBounds-fixet nedan
+// för den faktiska orsaken till "stannar-flyger-pausar" vid dragning.
 map.on("zoomstart", disableMarkerTransitions);
 map.on("moveend", enableMarkerTransitions);
 map.on("zoomend", () => {
@@ -715,6 +721,8 @@ function updateFollowHud(entry) {
 // misstag blockera en riktig dragning som råkade ske samtidigt, vilket
 // gav en fördröjd "hopp"-effekt efteråt.
 map.on("dragstart", stopFollow);
+map.on("dragstart", () => { isDragging = true; });
+map.on("dragend", () => { isDragging = false; });
 // Ett klick är ALLTID en äkta användarhandling (vår egen kod skapar
 // aldrig låtsas-klick) — anropar stopFollow() direkt, UTAN att gå via
 // programmaticCameraMove-flaggan. Annars kunde flaggan (som är aktiv
@@ -842,13 +850,21 @@ function updateVehicles(entities) {
 
     // Utanför synfältet (och inte den vi just nu följer)? Rita ingen
     // markör, och ta bort en eventuell befintlig som panorerat/zoomat
-    // ut ur bilden.
+    // ut ur bilden. INTE medan man aktivt drar i kartan — annars kunde
+    // ett fordon tas bort och sedan skapas HELT FRÄSCH (utan någon
+    // startposition att glida ifrån) så fort dragningen avslutades,
+    // vilket gav en "stannar-flyger-pausar"-känsla.
     if (id !== followedId && !isWithinRenderBounds(lat, lon)) {
-      if (markers.has(id)) {
+      if (!isDragging && markers.has(id)) {
         const entry = markers.get(id);
         map.removeLayer(entry.marker);
         map.closePopup(entry.popup);
         markers.delete(id);
+      } else if (markers.has(id)) {
+        // Finns redan en markör men den är utanför synfältet just nu
+        // (eller vi drar aktivt) — räkna den ändå som "sedd" så den
+        // inte råkar tas bort av städningslogiken i onödan.
+        seenIds.add(id);
       }
       continue;
     }
