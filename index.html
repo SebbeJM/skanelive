@@ -571,12 +571,17 @@ followHudClose.addEventListener("click", (e) => {
 let programmaticCameraMove = false;
 let programmaticMoveResetTimer = null;
 
-function beginProgrammaticCameraMove() {
+function beginProgrammaticCameraMove(durationMs) {
   programmaticCameraMove = true;
   clearTimeout(programmaticMoveResetTimer);
+  // Glidningstiden kan numera variera (matchar ikonens egen, upp till
+  // POLL_INTERVAL_MS * 2) — vänta lite längre än själva animationen
+  // innan vi litar på drag/zoom-lyssnarna igen, annars kunde flaggan
+  // slås av MITT I en lång glidning.
+  const safeDuration = (durationMs || 1400) + 400;
   programmaticMoveResetTimer = setTimeout(() => {
     programmaticCameraMove = false;
-  }, 3200);
+  }, safeDuration);
 }
 
 function stopFollowIfUserInitiated() {
@@ -756,13 +761,17 @@ function updateVehicles(entities) {
         entry.popup.setContent(renderPopupHtml(popupHtml, entry.pinned, id));
       }
       if (followedId === id) {
-        console.log(`⏱ Följer ${id}: uppdaterar kameraposition till`, [lat, lon]);
         updateFollowHud(entry);
-        beginProgrammaticCameraMove();
+        beginProgrammaticCameraMove(clamped);
+        // Samma glidningstid som ikonens egen CSS-glidning (clamped) —
+        // annars hinner kameran ikapp på sina fasta 2,8 sekunder och
+        // sedan STÅR STILL och väntar tills nästa hämtning, medan
+        // ikonen fortsätter glida mjukt hela vägen. Det gav den
+        // "hackiga" känslan.
         map.panTo([lat, lon], {
           animate: true,
-          duration: 2.8,
-          easeLinearity: 0.12,
+          duration: clamped / 1000,
+          easeLinearity: 1, // linjär, matchar ikonens egen linjära CSS-glidning
           noMoveStart: true
         });
         if (Math.abs(map.getZoom() - FOLLOW_ZOOM) > 0.4) {
