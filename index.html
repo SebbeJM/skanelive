@@ -322,6 +322,25 @@
     flex-shrink: 0;
   }
 
+  #visitor-stats {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #visitor-stats span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  #visitor-stats strong {
+    color: var(--fg);
+    font-weight: 600;
+  }
+
   @media (max-width: 700px) {
     .subtitle {
       display: none;
@@ -336,6 +355,12 @@
       overflow-x: auto;
       flex-wrap: nowrap;
       -webkit-overflow-scrolling: touch;
+    }
+    #visitor-stats {
+      order: 4;
+      width: 100%;
+      justify-content: flex-start;
+      overflow-x: auto;
     }
     #contact-btn {
       display: none;
@@ -358,6 +383,10 @@
       <div class="legend-row"><span class="legend-dot" style="background:#f9a825"></span>Regionbuss</div>
       <div class="legend-row"><span class="legend-dot" style="background:#645fa2"></span>Pågatåg</div>
       <div class="legend-row"><span class="legend-dot" style="background:#a3a9ad"></span>Öresundståg</div>
+    </div>
+    <div id="visitor-stats">
+      <span>besökare idag: <strong id="visitors-today">–</strong></span>
+      <span>Denna månad: <strong id="visitors-month">–</strong></span>
     </div>
     <div class="header-right">
       <a href="contact.html" id="contact-btn">Kontakt</a>
@@ -890,11 +919,34 @@ async function updateResRobotDepartures() {
   }
 }
 
+// ============================================================
+// Besöksräknare (idag + denna månad)
+// Anropar din egen Worker: GET /counter  → { today, month }
+// ============================================================
+async function loadVisitorStats() {
+  const todayEl = document.getElementById("visitors-today");
+  const monthEl = document.getElementById("visitors-month");
+  if (!todayEl || !monthEl) return;
+
+  try {
+    const res = await fetch(`${PROXY_URL}/counter`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    todayEl.textContent = (data.today ?? 0).toLocaleString("sv-SE");
+    monthEl.textContent = (data.month ?? 0).toLocaleString("sv-SE");
+  } catch (err) {
+    console.warn("Kunde inte hämta besökssiffror:", err.message);
+    todayEl.textContent = "–";
+    monthEl.textContent = "–";
+  }
+}
+
 (async function init() {
   console.time("⏱ init() start → loadProtoSchema klar");
   await loadProtoSchema();
   console.timeEnd("⏱ init() start → loadProtoSchema klar");
   pollLoop();
+  loadVisitorStats(); // hämta besökssiffror parallellt
 
   loadRouteColors().then(() => {
     staticDataLoaded = true;
