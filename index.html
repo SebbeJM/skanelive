@@ -541,13 +541,15 @@ if (CARTO_API_KEY.includes("DIN_CARTO_NYCKEL")) {
 function disableMarkerTransitions() {
   mapContainer.classList.add("map-moving");
   for (const entry of markers.values()) {
-    entry.el.style.transitionProperty = "none";
+    const el = entry.marker.getElement();
+    if (el) el.style.transitionProperty = "none";
   }
 }
 function enableMarkerTransitions() {
   mapContainer.classList.remove("map-moving");
   for (const entry of markers.values()) {
-    entry.el.style.transitionProperty = "transform";
+    const el = entry.marker.getElement();
+    if (el) el.style.transitionProperty = "transform";
   }
   // Rita in fordon som just blivit synliga (panorering/zoom) direkt, i
   // stället för att vänta upp till 7 sekunder på nästa hämtning. INTE
@@ -751,8 +753,14 @@ function shouldShowLabels() {
   return map.getZoom() >= ZOOM_LABEL_THRESHOLD;
 }
 function iconSizeForZoom() {
+  const veryMinZoom = 5, veryMinSize = 5; // halva storleken vid mycket utzoomning
   const minSize = 10, maxSize = 22, minZoom = 8, maxZoom = 13;
   const z = map.getZoom();
+  if (z <= veryMinZoom) return veryMinSize;
+  if (z < minZoom) {
+    const t = (z - veryMinZoom) / (minZoom - veryMinZoom);
+    return Math.round(veryMinSize + (minSize - veryMinSize) * t);
+  }
   const t = Math.max(0, Math.min(1, (z - minZoom) / (maxZoom - minZoom)));
   return Math.round(minSize + (maxSize - minSize) * t);
 }
