@@ -564,6 +564,14 @@ function enableMarkerTransitions() {
 // enhet (ikonernas EGNA positioner inom kartan ändras inte), så där
 // finns ingen anledning att frysa något — bussarna fortsätter glida
 // mjukt även medan man drar runt på kartan.
+// Leaflet räknar tyvärr ibland om varje ikons ABSOLUTA pixelposition
+// (en intern referenspunkt-återställning) inte bara vid zoom utan även
+// under/efter vanlig dragning — om vår glidnings-animation är aktiv då
+// försöker den animera den tekniska omräkningen som om det vore en
+// riktig rörelse, vilket gav en störande "stannar-flyger-pausar"-
+// effekt. Fryser därför glidningen under HELA kamerarörelsen (både
+// panorering och zoom), inte bara zoom.
+map.on("movestart", disableMarkerTransitions);
 map.on("zoomstart", disableMarkerTransitions);
 map.on("moveend", enableMarkerTransitions);
 map.on("zoomend", () => {
