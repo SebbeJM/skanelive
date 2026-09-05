@@ -170,6 +170,12 @@
     background: var(--bg);
   }
 
+  /* Ljusare ortsnamn (Malmö, Staffanstorp osv.) — bara detta tile-lager
+     ljusas upp, resten av kartan (vägar, vatten osv.) är opåverkad. */
+  .place-labels-layer {
+    filter: brightness(1.6);
+  }
+
   .vehicle-marker {
     transition: transform 6.5s linear;
     will-change: transform;
@@ -441,11 +447,22 @@ const map = L.map("map", {
   zoomControl: true,
   attributionControl: true,
 });
+// Basen (utan ortsnamn) och etiketterna som ett SEPARAT lager ovanpå —
+// Cartos egna "nolabels"/"only_labels"-varianter, tänkta att kombineras
+// så här. Låter oss ljusa upp bara ortsnamnen (se CSS-klassen
+// "place-labels-layer") utan att påverka resten av kartan.
 L.tileLayer(
-  `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+  `https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
   {
     maxZoom: 20,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  }
+).addTo(map);
+L.tileLayer(
+  `https://{s}.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+  {
+    maxZoom: 20,
+    className: "place-labels-layer",
   }
 ).addTo(map);
 console.timeEnd("⏱ script start → map-objekt skapat");
