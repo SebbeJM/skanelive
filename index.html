@@ -733,10 +733,15 @@ async function fetchVehiclePositions() {
 }
 
 let firstPollLogged = false;
+// Sparar den senaste hämtade fordonslistan, så vi kan rita om markörerna
+// direkt när den statiska linjedatan (färger m.m.) blir klar — i stället
+// för att behöva vänta på nästa schemalagda hämtning (upp till 7 sekunder).
+let lastEntities = null;
 async function pollLoop() {
   const isFirst = !firstPollLogged;
   try {
     const entities = await fetchVehiclePositions();
+    lastEntities = entities;
     updateVehicles(entities);
     const count = markers.size;
     setStatus("live", `live · ${count} fordon · uppdaterad ${new Date().toLocaleTimeString("sv-SE")}`);
@@ -849,6 +854,11 @@ async function updateResRobotDepartures() {
 
   loadRouteColors().then(() => {
     staticDataLoaded = true;
+    // Uppdatera direkt med de senast kända fordonspositionerna, i stället
+    // för att vänta på nästa schemalagda hämtning (upp till 7 sekunder
+    // bort) — det var orsaken till att bussarna kändes lite långsamma
+    // att få rätt färg, trots att själva färgdatan redan var klar.
+    if (lastEntities) updateVehicles(lastEntities);
 
     if (Object.values(STATION_EXT_IDS).some(Boolean)) {
       updateResRobotDepartures();
