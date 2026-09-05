@@ -616,11 +616,6 @@ function beginProgrammaticCameraMove(durationMs) {
   }, safeDuration);
 }
 
-function stopFollowIfUserInitiated() {
-  if (programmaticCameraMove) return;
-  stopFollow();
-}
-
 window.startFollow = function(id) {
   const entry = markers.get(id);
   if (!entry) return;
@@ -699,7 +694,14 @@ function updateFollowHud(entry) {
 // "click"-händelse (till skillnad från en rå DOM-lyssnare) avfyras
 // heller aldrig för klick på kontroller som zoom-knapparna, bara på
 // själva kartan.
-map.on("dragstart", stopFollowIfUserInitiated);
+// En riktig dragning startas ALDRIG av vår egen kod (panTo/flyTo
+// använder inte alls samma interna dragningsmekanism som en genuin
+// mus-/pekskärmsdragning) — precis som klick, anropa stopFollow()
+// direkt utan att gå via programmaticCameraMove-flaggan. Annars kunde
+// flaggan (aktiv under hela våra egna panorerings-animationer) av
+// misstag blockera en riktig dragning som råkade ske samtidigt, vilket
+// gav en fördröjd "hopp"-effekt efteråt.
+map.on("dragstart", stopFollow);
 // Ett klick är ALLTID en äkta användarhandling (vår egen kod skapar
 // aldrig låtsas-klick) — anropar stopFollow() direkt, UTAN att gå via
 // programmaticCameraMove-flaggan. Annars kunde flaggan (som är aktiv
