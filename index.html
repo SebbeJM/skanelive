@@ -771,13 +771,13 @@ function drawAllRailLines(lines) {
 }
 const markers = new Map();
 let staticDataLoaded = false;
-const ZOOM_LABEL_THRESHOLD = 12;
+const ZOOM_LABEL_THRESHOLD = 14; // höjt från 12 — kräver mer inzoomning innan linjenummer visas
 function shouldShowLabels() {
   return map.getZoom() >= ZOOM_LABEL_THRESHOLD;
 }
 function iconSizeForZoom() {
-  const veryMinZoom = 5, veryMinSize = 5; // halva storleken vid mycket utzoomning
-  const minSize = 10, maxSize = 22, minZoom = 8, maxZoom = 13;
+  const veryMinZoom = 5, veryMinSize = 4; // halva storleken vid mycket utzoomning
+  const minSize = 7, maxSize = 22, minZoom = 8, maxZoom = 14; // mindre ikoner tills man är lika inzoomad som ZOOM_LABEL_THRESHOLD
   const z = map.getZoom();
   if (z <= veryMinZoom) return veryMinSize;
   if (z < minZoom) {
