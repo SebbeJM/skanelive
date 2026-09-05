@@ -558,9 +558,14 @@ function enableMarkerTransitions() {
   // som fastnar hela kameran.
   if (lastEntities && !followedId) updateVehicles(lastEntities);
 }
-map.on("movestart", disableMarkerTransitions);
-map.on("moveend", enableMarkerTransitions);
+// Bara ZOOM behöver frysa glidningen — då räknas varje ikons pixel-
+// position om (skalan ändras), vilket annars gav den gamla "flyger
+// runt"-buggen. Vanlig dragning/panorering flyttar hela kartan som en
+// enhet (ikonernas EGNA positioner inom kartan ändras inte), så där
+// finns ingen anledning att frysa något — bussarna fortsätter glida
+// mjukt även medan man drar runt på kartan.
 map.on("zoomstart", disableMarkerTransitions);
+map.on("moveend", enableMarkerTransitions);
 map.on("zoomend", () => {
   for (const entry of markers.values()) {
     entry.marker.setIcon(makeDivIcon(entry.tripInfo, entry.moving));
