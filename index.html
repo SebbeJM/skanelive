@@ -532,8 +532,30 @@ if (CARTO_API_KEY.includes("DIN_CARTO_NYCKEL")) {
   banner.textContent = "⚠ Sätt CARTO_API_KEY i index.html till din egen nyckel (carto.com/basemaps/apikey)";
   document.querySelector("#app > div").appendChild(banner);
 }
-map.on("movestart", () => mapContainer.classList.add("map-moving"));
-map.on("moveend", () => mapContainer.classList.remove("map-moving"));
+// Stänger av glidnings-transitionen DIREKT via inline style på varje
+// markör (inte bara via en CSS-klass, som kan hinna släpa efter en
+// bråkdel av en sekund) så snart kartan börjar panorera/zooma — annars
+// hinner ikonerna "flyga" till fel plats innan avstängningen slår
+// igenom, eftersom en zoom ändrar deras pixel-position precis som en
+// riktig förflyttning skulle göra.
+function disableMarkerTransitions() {
+  mapContainer.classList.add("map-moving");
+  for (const entry of markers.values()) {
+    entry.el.style.transitionProperty = "none";
+  }
+}
+function enableMarkerTransitions() {
+  mapContainer.classList.remove("map-moving");
+  for (const entry of markers.values()) {
+    entry.el.style.transitionProperty = "transform";
+  }
+  // Rita in fordon som just blivit synliga (panorering/zoom) direkt, i
+  // stället för att vänta upp till 7 sekunder på nästa hämtning.
+  if (lastEntities) updateVehicles(lastEntities);
+}
+map.on("movestart", disableMarkerTransitions);
+map.on("moveend", enableMarkerTransitions);
+map.on("zoomstart", disableMarkerTransitions);
 map.on("zoomend", () => {
   for (const entry of markers.values()) {
     entry.marker.setIcon(makeDivIcon(entry.tripInfo, entry.moving));
@@ -597,6 +619,11 @@ function stopFollowIfUserInitiated() {
 window.startFollow = function(id) {
   const entry = markers.get(id);
   if (!entry) return;
+  // Leaflet stödjer ett inbyggt läge där scrollzoom alltid sker mot
+  // KARTANS CENTRUM i stället för muspekaren — precis vad vi vill ha
+  // under följning, så bussen alltid hålls i mitten oavsett var musen
+  // står medan man scrollar.
+  map.options.scrollWheelZoom = "center";
   map.closePopup();
   for (const e of markers.values()) {
     e.pinned = false;
@@ -614,6 +641,9 @@ window.startFollow = function(id) {
 
 function stopFollow() {
   if (!followedId) return;
+  // Tillbaka till vanlig scrollzoom (mot muspekaren) när man inte
+  // längre följer någon resa.
+  map.options.scrollWheelZoom = true;
   const previouslyFollowedId = followedId;
   followedId = null;
 
@@ -622,6 +652,12 @@ function stopFollow() {
   // "teleporteras" plötsligt några sekunder senare till dit den redan
   // var på väg, trots att man tänkte sig ha stoppat följningen.
   map.stop();
+  // Extra skyddsnät: läs av EXAKT var kartan faktiskt befinner sig just
+  // nu (mitt i vad som än pågick) och LÅS den där helt utan animation.
+  // map.stop() räckte tydligen inte alltid ensamt för att verkligen
+  // frysa kameran — det här garanterar att den aldrig fortsätter röra
+  // sig ett enda pixel till efter klicket.
+  map.setView(map.getCenter(), map.getZoom(), { animate: false, duration: 0 });
   programmaticCameraMove = false;
   clearTimeout(programmaticMoveResetTimer);
 
@@ -672,6 +708,12 @@ map.on("click", stopFollow);
 map.on("zoomend", () => {
   if (followedId && !programmaticCameraMove) {
     userAdjustedZoomDuringFollow = true;
+    // Centrera direkt tillbaka på den följda ikonen, oavsett var musen
+    // stod när man scrollade — annars zoomar Leaflet som standard mot
+    // muspekaren, vilket annars skulle få vyn att glida iväg från
+    // bussen om man inte råkade ha musen exakt över den.
+    const entry = markers.get(followedId);
+    if (entry) map.panTo(entry.marker.getLatLng(), { animate: false });
   }
 });
 
@@ -753,6 +795,16 @@ function makeDivIcon(tripInfo, moving) {
     iconAnchor: [size / 2, size / 2],
   });
 }
+// Bara fordon inom (en marginal runt) det synliga kartutsnittet får en
+// markör alls — precis som SL Live gör. Sparar massor av DOM-element
+// och CSS-animationer när man är inzoomad på en liten del av Skåne.
+// Marginalen (50 %) gör att fordon strax utanför skärmkanten ändå
+// redan finns där, så inget dyker upp abrupt exakt vid kanten.
+const RENDER_BOUNDS_PADDING = 0.5;
+function isWithinRenderBounds(lat, lon) {
+  return map.getBounds().pad(RENDER_BOUNDS_PADDING).contains([lat, lon]);
+}
+
 function updateVehicles(entities) {
   const seenIds = new Set();
   for (const entity of entities) {
@@ -761,6 +813,19 @@ function updateVehicles(entities) {
     const id = (vp.vehicle && (vp.vehicle.id || vp.vehicle.label)) || entity.id;
     const lat = vp.position.latitude;
     const lon = vp.position.longitude;
+
+    // Utanför synfältet (och inte den vi just nu följer)? Rita ingen
+    // markör, och ta bort en eventuell befintlig som panorerat/zoomat
+    // ut ur bilden.
+    if (id !== followedId && !isWithinRenderBounds(lat, lon)) {
+      if (markers.has(id)) {
+        const entry = markers.get(id);
+        map.removeLayer(entry.marker);
+        map.closePopup(entry.popup);
+        markers.delete(id);
+      }
+      continue;
+    }
     const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
     const tripInfo = tripInfoByTripId.get(tripId);
     const displayName = (tripInfo && tripInfo.line) || tripId || "okänd";
