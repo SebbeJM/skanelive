@@ -1,0 +1,39 @@
+name: Bygg GTFS-data
+
+# Körs automatiskt varje natt kl 04:00 UTC, plus går att köra manuellt
+# (fliken "Actions" -> "Bygg GTFS-data" -> "Run workflow") om du vill
+# uppdatera datan direkt utan att vänta till natten.
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+# Behövs för att workflow-jobbet ska få lov att committa/pusha ändringar
+# tillbaka till repot.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checka ut repot
+        uses: actions/checkout@v4
+
+      - name: Sätt upp Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Kör build-gtfs.js
+        env:
+          TRAFIKLAB_STATIC_KEY: ${{ secrets.TRAFIKLAB_STATIC_KEY }}
+        run: node build-gtfs.js
+
+      - name: Committa och pusha de uppdaterade filerna
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet && echo "Inga ändringar i datan, hoppar över commit." || git commit -m "Uppdatera GTFS-data ($(date -u +%Y-%m-%d))"
+          git push
