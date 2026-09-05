@@ -456,11 +456,13 @@ const map = new maplibregl.Map({
   center: [MAP_CENTER[1], MAP_CENTER[0]],
   zoom: MAP_ZOOM,
   attributionControl: true,
-  dragRotate: false,
-  pitchWithRotate: false,
-  touchPitch: false,
+  // Stänger av flera sida-vid-sida-kopior av jorden vid utzoomning.
+  // MapLibres HTML-markörer (våra fordonsikoner) vet tyvärr inte alltid
+  // vilken kopia de ska rendera på i det läget, vilket fick alla fordon
+  // att hamna på en helt annan (fel) jord-kopia längst till vänster.
+  // Vi behöver aldrig se världen upprepad ändå, bara Skåne.
+  renderWorldCopies: false,
 });
-map.touchZoomRotate.disableRotation();
 map.addControl(new maplibregl.NavigationControl(), "top-right");
 
 // Garanterar att kartan alltid känner till sin RIKTIGA storlek, även om
