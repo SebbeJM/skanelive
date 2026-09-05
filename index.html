@@ -24,8 +24,8 @@
 <meta name="twitter:description" content="Live-data över kollektivtrafiken i Skåne Län — se bussar och tåg röra sig i realtid på kartan.">
 <link rel="preconnect" href="https://unpkg.com" crossorigin>
 <link rel="preconnect" href="https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev">
-<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
   :root {
     --bg: #0e0e0e;
@@ -188,11 +188,25 @@
     background: var(--bg);
   }
 
+  /* Ljusare ortsnamn (Malmö, Staffanstorp osv.) — bara detta tile-lager
+     ljusas upp, resten av kartan (vägar, vatten osv.) är opåverkad. */
+  .place-labels-layer {
+    filter: brightness(1.6);
+  }
+
+  /* Väldigt mild ljusstyrke-höjning på hela baskartan (vägar, vatten osv.)
+     — går tyvärr inte att bara ljusa upp vägarna specifikt med färdiga
+     bildplattor (rastertiles), det kräver vektor-tiles med lagerkontroll
+     som vi hade tidigare. Detta är den bästa kompromissen. */
+  .base-map-layer {
+    filter: brightness(1.12);
+  }
+
   .vehicle-marker {
     transition: transform 6.5s linear;
     will-change: transform;
   }
-  #map.map-moving .vehicle-marker {
+  .leaflet-container.map-moving .vehicle-marker {
     transition: none !important;
   }
 
@@ -247,20 +261,14 @@
     color: #8a7fd6;
   }
 
-  .maplibregl-popup {
-    transition: opacity 0.18s ease;
-  }
-  .maplibregl-popup-content {
+  .leaflet-popup-content-wrapper {
     border-radius: 4px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     background: var(--panel);
     color: var(--fg);
   }
-  .maplibregl-popup-tip {
-    border-top-color: var(--panel);
-    border-bottom-color: var(--panel);
-  }
-  .maplibregl-popup-close-button { color: var(--muted); }
+  .leaflet-popup-tip { background: var(--panel); }
+  .leaflet-popup-close-button { color: var(--muted) !important; }
   .popup-content b {
     display: block;
     margin-bottom: 0.25em;
@@ -367,7 +375,7 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/protobufjs@7.2.6/dist/protobuf.min.js"></script>
 <script>
 console.time("⏱ TOTALT: skriptstart → första fordonet synligt");
@@ -375,9 +383,18 @@ console.time("⏱ TOTALT: skriptstart → första fordonet synligt");
 // KONFIGURATION – ändra detta
 // ============================================================
 const PROXY_URL = "https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev";
+// De tre färdiga JSON-filerna byggs av ett gratis GitHub Actions-schema
+// en gång per natt (se build-gtfs.js och .github/workflows/build-gtfs.yml)
+// och ligger i samma repo som den här sidan — mycket snabbare än att
+// packa upp/tolka hela GTFS-zippen (flera MB CSV) i webbläsaren, vilket
+// vi gjorde tidigare, och helt gratis (ingen Cloudflare-betalplan behövs).
 const TRIP_LOOKUP_URL = "data/trip_lookup.json";
 const RAIL_LINES_URL = "data/rail_lines.json";
 const TRAIN_STATIONS_URL = "data/train_stations.json";
+
+// Gratis Carto-nyckel (carto.com/basemaps/apikey) för Cartos RIKTIGA Dark
+// Matter-rastertiles.
+const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
 
 const POLL_INTERVAL_MS = 7000;
 const MAP_CENTER = [55.605, 12.9998]; // centrerad över Malmö vid start
@@ -431,7 +448,7 @@ message Position {
 `;
 
 // ============================================================
-// Karta — MapLibre GL JS + OpenFreeMap (vektor-tiles, gratis, ingen nyckel)
+// Karta — Leaflet + Cartos riktiga Dark Matter-rastertiles
 // ============================================================
 const mapContainer = document.getElementById("map");
 
@@ -450,56 +467,46 @@ document.addEventListener("click", (e) => {
 });
 
 console.time("⏱ script start → map-objekt skapat");
-const map = new maplibregl.Map({
-  container: "map",
-  style: "https://tiles.openfreemap.org/styles/liberty",
-  center: [MAP_CENTER[1], MAP_CENTER[0]],
+const map = L.map("map", {
+  center: MAP_CENTER,
   zoom: MAP_ZOOM,
+  zoomControl: true,
   attributionControl: true,
-  // Stänger av flera sida-vid-sida-kopior av jorden vid utzoomning.
-  // MapLibres HTML-markörer (våra fordonsikoner) vet tyvärr inte alltid
-  // vilken kopia de ska rendera på i det läget, vilket fick alla fordon
-  // att hamna på en helt annan (fel) jord-kopia längst till vänster.
-  // Vi behöver aldrig se världen upprepad ändå, bara Skåne.
-  renderWorldCopies: false,
 });
-map.addControl(new maplibregl.NavigationControl(), "top-right");
-
-// Garanterar att kartan alltid känner till sin RIKTIGA storlek, även om
-// sidans layout ändras efter att kartan skapades (t.ex. när typsnitt
-// laddar klart och headerns höjd stabiliseras) — annars kan MapLibres
-// interna beräkning av "vad som är synligt var" bli fel/inaktuell.
-new ResizeObserver(() => map.resize()).observe(mapContainer);
+// Basen (utan ortsnamn) och etiketterna som ett SEPARAT lager ovanpå —
+// Cartos egna "nolabels"/"only_labels"-varianter, tänkta att kombineras
+// så här. Låter oss ljusa upp bara ortsnamnen (se CSS-klassen
+// "place-labels-layer") utan att påverka resten av kartan.
+L.tileLayer(
+  `https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+  {
+    maxZoom: 20,
+    className: "base-map-layer",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  }
+).addTo(map);
+L.tileLayer(
+  `https://{s}.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+  {
+    maxZoom: 20,
+    className: "place-labels-layer",
+  }
+).addTo(map);
 console.timeEnd("⏱ script start → map-objekt skapat");
 
-function whenMapLoaded() {
-  return new Promise((resolve) => {
-    if (map.loaded()) resolve();
-    else map.once("load", resolve);
-  });
+if (CARTO_API_KEY.includes("DIN_CARTO_NYCKEL")) {
+  const banner = document.createElement("div");
+  banner.id = "config-banner";
+  banner.textContent = "⚠ Sätt CARTO_API_KEY i index.html till din egen nyckel (carto.com/basemaps/apikey)";
+  document.querySelector("#app > div").appendChild(banner);
 }
 
-// Stänger av glidnings-transitionen DIREKT via inline style på varje
-// markör (inte bara via en CSS-klass) så snart kartan börjar
-// panorera/zooma — annars kan MapLibres egna, momentana
-// positionsomräkningar vid zoom krocka med vår långsamma CSS-transition
-// och få markörerna att "släpa efter" och hamna fel under/efter zoom.
-map.on("movestart", () => {
-  mapContainer.classList.add("map-moving");
-  for (const entry of markers.values()) {
-    entry.el.style.transitionProperty = "none";
-  }
-});
-map.on("moveend", () => {
-  mapContainer.classList.remove("map-moving");
-  for (const entry of markers.values()) {
-    entry.el.style.transitionProperty = "transform";
-  }
-});
+map.on("movestart", () => mapContainer.classList.add("map-moving"));
+map.on("moveend", () => mapContainer.classList.remove("map-moving"));
 
 map.on("zoomend", () => {
   for (const entry of markers.values()) {
-    entry.el.innerHTML = iconHtml(entry.tripInfo, entry.moving);
+    entry.marker.setIcon(makeDivIcon(entry.tripInfo, entry.moving));
   }
 });
 
@@ -507,8 +514,8 @@ map.on("click", () => {
   for (const entry of markers.values()) {
     if (entry.pinned) {
       entry.pinned = false;
-      entry.popup.setHTML(renderPopupHtml(entry.popupBaseHtml, false));
-      hidePopup(entry.popup);
+      entry.popup.setContent(renderPopupHtml(entry.popupBaseHtml, false));
+      map.closePopup(entry.popup);
     }
   }
 });
@@ -520,132 +527,12 @@ function setStatus(state, text) {
 }
 
 // ============================================================
-// Mörkläggning — samma exakta färgvärden som Cartos Dark Matter-stil,
-// plus vägar som ljusnar något vid inzoomning (kräver vektor-tiles).
+// Klassificering & färger
 // ============================================================
-const LAYERS_TO_REMOVE = [
-  "building-3d",
-  "aeroway_fill", "aeroway_runway", "aeroway_taxiway",
-  "boundary_3", "boundary_2", "boundary_disputed",
-  "waterway_line_label", "water_name_point_label", "water_name_line_label",
-  "poi_r20", "poi_r7", "poi_r1",
-  "highway-name-path", "highway-name-minor", "highway-name-major",
-  "highway-shield-non-us", "highway-shield-us-interstate", "road_shield_us",
-  "road_one_way_arrow", "road_one_way_arrow_opposite",
-  "label_other", "label_village", "label_state",
-  "label_country_3", "label_country_2", "label_country_1",
-];
-
-function removeUnneededLayers() {
-  for (const id of LAYERS_TO_REMOVE) {
-    if (map.getLayer(id)) map.removeLayer(id);
-  }
-}
-
-function applyDarkTheme() {
-  const style = map.getStyle();
-  for (const layer of style.layers) {
-    const id = layer.id;
-    const type = layer.type;
-    try {
-      if (type === "background") {
-        map.setPaintProperty(id, "background-color", "#0e0e0e");
-      } else if (type === "raster") {
-        map.setPaintProperty(id, "raster-opacity", 0);
-      } else if (id === "building") {
-        map.setPaintProperty(id, "fill-color", "#000000");
-        map.setPaintProperty(id, "fill-outline-color", "#000000");
-        map.setLayerZoomRange(id, 13, 24);
-      } else if (type === "fill") {
-        let fillColor;
-        if (id.includes("water")) {
-          fillColor = "#2c353c";
-        } else {
-          fillColor = "#0e0e0e";
-        }
-        map.setPaintProperty(id, "fill-color", fillColor);
-        if (layer.paint && layer.paint["fill-outline-color"] !== undefined) {
-          map.setPaintProperty(id, "fill-outline-color", fillColor);
-        }
-      } else if (type === "line") {
-        if (id.includes("waterway")) {
-          map.setPaintProperty(id, "line-color", "#3f5a6d");
-        } else if (id.includes("boundary")) {
-          map.setPaintProperty(id, "line-color", "#676772");
-        } else {
-          map.setPaintProperty(id, "line-color", [
-            "interpolate", ["linear"], ["zoom"],
-            10, "#1c1f26",
-            16, "#3a3f4d",
-          ]);
-        }
-      } else if (type === "symbol") {
-        if (layer.paint && layer.paint["text-color"] !== undefined) {
-          map.setPaintProperty(id, "text-color", "#c9c9c9");
-        }
-        if (layer.paint && layer.paint["text-halo-color"] !== undefined) {
-          map.setPaintProperty(id, "text-halo-color", "#0e0e0e");
-        }
-      }
-    } catch (err) {
-      console.warn(`Kunde inte omfärga lagret "${id}":`, err.message);
-    }
-  }
-
-  for (const id of ["poi_transit", "airport"]) {
-    if (!map.getLayer(id)) continue;
-    try {
-      map.setPaintProperty(id, "text-halo-width", 2.2);
-      map.setPaintProperty(id, "text-halo-color", "#0a0a0a");
-      map.setPaintProperty(id, "text-halo-blur", 0);
-    } catch (err) {
-      console.warn(`Kunde inte förstärka etiketten för "${id}":`, err.message);
-    }
-  }
-
-  if (map.getLayer("poi_transit")) {
-    map.setLayerZoomRange("poi_transit", 15, 24);
-  }
-}
-
-const SKANE_BOUNDS_POLYGON = {
-  type: "Polygon",
-  coordinates: [[
-    [12.65, 55.25], [14.65, 55.25], [14.65, 56.55], [12.65, 56.55], [12.65, 55.25],
-  ]],
-};
-
-function highlightSkaneRailLines() {
-  const style = map.getStyle();
-  for (const layer of style.layers) {
-    if (layer.type !== "line" || !layer.id.includes("rail")) continue;
-    if (layer.id.endsWith("-skane")) continue;
-    const highlightId = `${layer.id}-skane`;
-    if (map.getLayer(highlightId)) continue;
-    const geoFilter = ["within", SKANE_BOUNDS_POLYGON];
-    const combinedFilter = layer.filter ? ["all", layer.filter, geoFilter] : geoFilter;
-    try {
-      map.addLayer({
-        id: highlightId,
-        type: "line",
-        source: layer.source,
-        ...(layer["source-layer"] ? { "source-layer": layer["source-layer"] } : {}),
-        layout: layer.layout || {},
-        filter: combinedFilter,
-        paint: {
-          "line-color": "#8a7fd6",
-          "line-width": layer.id.includes("hatching") ? 5 : 3.5,
-        },
-      });
-    } catch (err) {
-      console.warn(`Kunde inte lägga till Skåne-järnvägslager för "${layer.id}":`, err.message);
-    }
-  }
-}
-
-// ============================================================
-// Klassificering
-// ============================================================
+// OBS: all färgklassificering och Douglas-Peucker-förenkling görs numera
+// på SERVERN (i worker.js, en gång per natt) — se trip_lookup.json,
+// rail_lines.json och train_stations.json. isRailRouteType behövs bara
+// kvar här för CSS-klassen på markören (se markerClassName nedan).
 function isRailRouteType(routeType) {
   const n = parseInt(routeType, 10);
   if (Number.isNaN(n)) return false;
@@ -655,48 +542,34 @@ function isRailRouteType(routeType) {
 // ============================================================
 // Statisk linjedata
 // ============================================================
+// Nyckeln är trip_id direkt (inte route_id) — matchar exakt vad
+// realtidsflödet faktiskt ger oss, ingen extra koppling behövs.
 const tripInfoByTripId = new Map();
 
-const railLinesGeoJSON = { type: "FeatureCollection", features: [] };
-let railLinesLayerAdded = false;
+const routeLinesRenderer = L.canvas({ padding: 0.5 });
+const routeLinesLayer = L.layerGroup().addTo(map);
 
+// Ritar ALLA tåglinjer direkt från den redan färdiga (server-byggda)
+// rail_lines.json — ingen egen förenkling/filtrering behövs klientsidan
+// längre, servern har redan gjort det jobbet en gång för alla.
 function drawAllRailLines(lines) {
   for (const line of lines) {
-    railLinesGeoJSON.features.push({
-      type: "Feature",
-      properties: { color: `#${line.color}` },
-      geometry: {
-        type: "LineString",
-        coordinates: line.points.map(([lat, lon]) => [lon, lat]),
-      },
-    });
+    L.polyline(line.points, {
+      color: `#${line.color}`,
+      weight: 3,
+      opacity: 0.65,
+      renderer: routeLinesRenderer,
+      interactive: false,
+    }).addTo(routeLinesLayer);
   }
-  if (railLinesLayerAdded) {
-    map.getSource("rail-lines").setData(railLinesGeoJSON);
-    return;
-  }
-  map.addSource("rail-lines", { type: "geojson", data: railLinesGeoJSON });
-  const beforeId = map.getLayer("poi_transit") ? "poi_transit" : undefined;
-  map.addLayer(
-    {
-      id: "rail-lines-layer",
-      type: "line",
-      source: "rail-lines",
-      paint: {
-        "line-color": ["get", "color"],
-        "line-width": 3,
-        "line-opacity": 0.65,
-      },
-    },
-    beforeId
-  );
-  railLinesLayerAdded = true;
 }
 
 // ============================================================
 // Fordonsmarkörer
 // ============================================================
 const markers = new Map();
+// Blir true först när loadRouteColors() (trip_lookup.json m.fl.) är klar —
+// se updateVehicles() för varför detta styr "okänd"-filtret.
 let staticDataLoaded = false;
 
 const ZOOM_LABEL_THRESHOLD = 12;
@@ -741,30 +614,14 @@ function markerClassName(tripInfo) {
   return `vehicle-marker${tripInfo && isRailRouteType(tripInfo.type) ? " rail" : ""}`;
 }
 
-function showPopup(popup, marker) {
-  const alreadyOpen = popup.isOpen();
-  popup.setLngLat(marker.getLngLat());
-  if (!alreadyOpen) {
-    popup.addTo(map);
-    const el = popup.getElement();
-    if (!el) return;
-    el.style.opacity = "0";
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        el.style.opacity = "1";
-      });
-    });
-  }
-}
-
-function hidePopup(popup) {
-  const el = popup.getElement();
-  if (!el) {
-    popup.remove();
-    return;
-  }
-  el.style.opacity = "0";
-  setTimeout(() => popup.remove(), 180);
+function makeDivIcon(tripInfo, moving) {
+  const size = iconSizeForZoom();
+  return L.divIcon({
+    className: markerClassName(tripInfo),
+    html: iconHtml(tripInfo, moving),
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
 }
 
 function updateVehicles(entities) {
@@ -779,10 +636,16 @@ function updateVehicles(entities) {
     const lat = vp.position.latitude;
     const lon = vp.position.longitude;
     const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
+    // Trip_lookup.json är nyckeln direkt på trip_id — ingen extra koppling
+    // via route_id behövs längre, servern har redan gjort den kopplingen.
     const tripInfo = tripInfoByTripId.get(tripId);
     const displayName = (tripInfo && tripInfo.line) || tripId || "okänd";
     const isMoving = vp.position.speed != null && vp.position.speed > 0.5;
 
+    // Filtrera bara bort "okända" fordon EFTER att den statiska datan
+    // (trip_lookup.json) hunnit laddas klart. Innan dess skulle filtret
+    // annars dölja ALLA fordon, och sidan skulle se helt tom ut i onödan
+    // tills den (numera snabba) uppslagstabellen laddat klart.
     if (staticDataLoaded && displayName === "okänd") {
       continue;
     }
@@ -804,8 +667,7 @@ function updateVehicles(entities) {
     if (markers.has(id)) {
       const entry = markers.get(id);
       if (entry.iconKey !== iconKey) {
-        entry.el.className = markerClassName(tripInfo);
-        entry.el.innerHTML = iconHtml(tripInfo, isMoving);
+        entry.marker.setIcon(makeDivIcon(tripInfo, isMoving));
         entry.iconKey = iconKey;
       }
       entry.tripInfo = tripInfo;
@@ -813,43 +675,40 @@ function updateVehicles(entities) {
       const now = Date.now();
       const elapsed = entry.lastUpdateTime ? now - entry.lastUpdateTime : POLL_INTERVAL_MS;
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
-      entry.el.style.transitionDuration = `${clamped}ms`;
+      const el = entry.marker.getElement();
+      if (el) el.style.transitionDuration = `${clamped}ms`;
       entry.lastUpdateTime = now;
       entry.popupBaseHtml = popupHtml;
-      if (entry.popup.isOpen()) entry.popup.setLngLat([lon, lat]);
-      entry.marker.setLngLat([lon, lat]);
-      entry.popup.setHTML(renderPopupHtml(popupHtml, entry.pinned));
+      if (map.hasLayer(entry.popup)) entry.popup.setLatLng([lat, lon]);
+      entry.marker.setLatLng([lat, lon]);
+      entry.popup.setContent(renderPopupHtml(popupHtml, entry.pinned));
     } else {
-      const el = document.createElement("div");
-      el.className = markerClassName(tripInfo);
-      el.innerHTML = iconHtml(tripInfo, isMoving);
-
-      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
-        .setLngLat([lon, lat])
-        .addTo(map);
-      const popup = new maplibregl.Popup({ offset: 14, closeButton: false, closeOnClick: false })
-        .setHTML(popupHtml);
+      const marker = L.marker([lat, lon], { icon: makeDivIcon(tripInfo, isMoving) }).addTo(map);
+      const popup = L.popup({ offset: [0, -14], closeButton: false, autoClose: false, closeOnClick: false })
+        .setContent(popupHtml);
 
       const newEntry = {
-        marker, el, popup, iconKey, tripInfo, moving: isMoving,
+        marker, popup, iconKey, tripInfo, moving: isMoving,
         lastUpdateTime: Date.now(), pinned: false, popupBaseHtml: popupHtml,
       };
       markers.set(id, newEntry);
 
-      el.addEventListener("mouseenter", () => {
-        if (!popup.isOpen()) showPopup(popup, marker);
+      marker.on("mouseover", () => {
+        popup.setLatLng(marker.getLatLng());
+        popup.openOn(map);
       });
-      el.addEventListener("mouseleave", () => {
-        if (!newEntry.pinned) hidePopup(popup);
+      marker.on("mouseout", () => {
+        if (!newEntry.pinned) map.closePopup(popup);
       });
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
+      marker.on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
         newEntry.pinned = !newEntry.pinned;
-        popup.setHTML(renderPopupHtml(newEntry.popupBaseHtml, newEntry.pinned));
+        popup.setContent(renderPopupHtml(newEntry.popupBaseHtml, newEntry.pinned));
         if (newEntry.pinned) {
-          showPopup(popup, marker);
+          popup.setLatLng(marker.getLatLng());
+          popup.openOn(map);
         } else {
-          hidePopup(popup);
+          map.closePopup(popup);
         }
       });
     }
@@ -857,8 +716,8 @@ function updateVehicles(entities) {
 
   for (const [id, entry] of markers.entries()) {
     if (!seenIds.has(id)) {
-      entry.marker.remove();
-      hidePopup(entry.popup);
+      map.removeLayer(entry.marker);
+      map.closePopup(entry.popup);
       markers.delete(id);
     }
   }
@@ -875,7 +734,9 @@ async function loadProtoSchema() {
 }
 
 // ============================================================
-// Statisk linjedata — tre färdiga, servergenererade JSON-filer
+// Statisk linjedata — tre färdiga, servergenererade JSON-filer i stället
+// för att packa upp/tolka hela GTFS-zippen (flera MB CSV) själv. Se
+// worker.js för hur dessa byggs (en gång per natt).
 // ============================================================
 async function loadRouteColors() {
   try {
@@ -897,7 +758,6 @@ async function loadRouteColors() {
     }
     console.log(`Laddade uppslagstabell för ${tripInfoByTripId.size} resor (byggd ${tripLookup.builtAt})`);
 
-    await whenMapLoaded();
     drawAllRailLines(railLinesData.lines);
     console.log(`Ritade ${railLinesData.lines.length} tåglinjer`);
 
@@ -917,6 +777,9 @@ async function fetchVehiclePositions() {
 }
 
 let firstPollLogged = false;
+// Sparar den senaste hämtade fordonslistan, så vi kan rita om markörerna
+// direkt när den statiska linjedatan (färger m.m.) blir klar — i stället
+// för att behöva vänta på nästa schemalagda hämtning (upp till 7 sekunder).
 let lastEntities = null;
 async function pollLoop() {
   const isFirst = !firstPollLogged;
@@ -939,7 +802,8 @@ async function pollLoop() {
 }
 
 // ============================================================
-// Riktiga tågstationer
+// ============================================================
+// Riktiga tågstationer, hämtade direkt från Trafiklabs data
 // ============================================================
 const TRAIN_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="13" height="13">
@@ -957,14 +821,15 @@ function drawRealTrainStations(stations) {
   for (const s of stations) {
     if (!s.name) continue;
 
-    const el = document.createElement("div");
-    el.className = "train-station-marker";
-    el.innerHTML = `<div class="train-station-icon">${TRAIN_ICON_SVG}</div>`;
-    const popup = new maplibregl.Popup({ offset: 12 }).setHTML(`<div class="popup-content"><b>${s.name}</b></div>`);
-    new maplibregl.Marker({ element: el, anchor: "center" })
-      .setLngLat([s.lon, s.lat])
-      .setPopup(popup)
-      .addTo(map);
+    const icon = L.divIcon({
+      className: "train-station-marker",
+      html: `<div class="train-station-icon">${TRAIN_ICON_SVG}</div>`,
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+    });
+    const marker = L.marker([s.lat, s.lon], { icon }).addTo(map);
+    const popup = L.popup({ offset: [0, -12] }).setContent(`<div class="popup-content"><b>${s.name}</b></div>`);
+    marker.bindPopup(popup);
 
     trainStationMarkers.set(s.name, { popup });
   }
@@ -972,7 +837,7 @@ function drawRealTrainStations(stations) {
 }
 
 // ============================================================
-// ResRobot
+// ResRobot — riktiga avgångstider (med förseningar) för tågstationerna
 // ============================================================
 const STATION_EXT_IDS = {
 };
@@ -1016,7 +881,7 @@ async function updateResRobotDepartures() {
       const list = departures.length
         ? departures.map((d) => `<div>${formatDeparture(d)}</div>`).join("")
         : "<div>Inga avgångar just nu</div>";
-      entry.popup.setHTML(`<div class="popup-content"><b>${stationName}</b>${list}</div>`);
+      entry.popup.setContent(`<div class="popup-content"><b>${stationName}</b>${list}</div>`);
     } catch (err) {
       console.warn(`Kunde inte hämta avgångar för ${stationName}:`, err.message);
     }
@@ -1031,14 +896,12 @@ async function updateResRobotDepartures() {
   console.timeEnd("⏱ init() start → loadProtoSchema klar");
   pollLoop();
 
-  whenMapLoaded().then(() => {
-    applyDarkTheme();
-    highlightSkaneRailLines();
-    removeUnneededLayers();
-  });
-
   loadRouteColors().then(() => {
     staticDataLoaded = true;
+    // Uppdatera direkt med de senast kända fordonspositionerna, i stället
+    // för att vänta på nästa schemalagda hämtning (upp till 7 sekunder
+    // bort) — det var orsaken till att bussarna kändes lite långsamma
+    // att få rätt färg, trots att själva färgdatan redan var klar.
     if (lastEntities) updateVehicles(lastEntities);
 
     if (Object.values(STATION_EXT_IDS).some(Boolean)) {
