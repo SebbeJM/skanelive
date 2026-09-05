@@ -462,6 +462,12 @@ const map = new maplibregl.Map({
 });
 map.touchZoomRotate.disableRotation();
 map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+// Garanterar att kartan alltid känner till sin RIKTIGA storlek, även om
+// sidans layout ändras efter att kartan skapades (t.ex. när typsnitt
+// laddar klart och headerns höjd stabiliseras) — annars kan MapLibres
+// interna beräkning av "vad som är synligt var" bli fel/inaktuell.
+new ResizeObserver(() => map.resize()).observe(mapContainer);
 console.timeEnd("⏱ script start → map-objekt skapat");
 
 function whenMapLoaded() {
