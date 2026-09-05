@@ -659,7 +659,13 @@ function updateFollowHud(entry) {
 // heller aldrig för klick på kontroller som zoom-knapparna, bara på
 // själva kartan.
 map.on("dragstart", stopFollowIfUserInitiated);
-map.on("click", stopFollowIfUserInitiated);
+// Ett klick är ALLTID en äkta användarhandling (vår egen kod skapar
+// aldrig låtsas-klick) — anropar stopFollow() direkt, UTAN att gå via
+// programmaticCameraMove-flaggan. Annars kunde flaggan (som är aktiv
+// under hela vår egen flyTo-animation) av misstag blockera precis de
+// klick som händer mitt i animationen — vilket var exakt varför
+// avbryt-klicket inte alltid fungerade.
+map.on("click", stopFollow);
 // Kommer bara ihåg ANVÄNDARENS egen zoomning (inte våra egna
 // map.setZoom(FOLLOW_ZOOM, ...)-anrop under följning) — se
 // userAdjustedZoomDuringFollow ovan.
