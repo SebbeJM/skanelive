@@ -249,10 +249,9 @@ message Position {
 
   // ============================================================
   // Karta – samma Carto Dark Matter som live-kartan
-  // Inzoomad på centrala Malmö
   // ============================================================
   const map = L.map("bg-map", {
-    center: [55.5935, 13.0130],   // Möllevången
+    center: [55.5935, 13.0130],
     zoom: 15.2,
     zoomControl: false,
     attributionControl: false,
@@ -281,13 +280,14 @@ message Position {
   const tripInfoByTripId = new Map();
   let staticDataLoaded = false;
   let FeedMessageType = null;
+  let lastEntities = null;
 
   function iconHtml(tripInfo) {
     const hasColor = tripInfo && tripInfo.color;
     const bg = hasColor ? `#${tripInfo.color}` : null;
     const fg = tripInfo && tripInfo.textColor ? `#${tripInfo.textColor}` : "#eef1ec";
     const label = tripInfo && tripInfo.line ? tripInfo.line : "";
-    const style = `${bg ? `background:${bg};color:${fg};` : ""}`;
+    const style = bg ? `background:${bg};color:${fg};` : "";
     const cls = hasColor ? "" : "unknown";
     const labelHtml = label ? `<span class="label">${label}</span>` : "";
     return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
@@ -300,6 +300,10 @@ message Position {
       iconSize: [20, 20],
       iconAnchor: [10, 10],
     });
+  }
+
+  function iconKeyFor(tripInfo) {
+    return (tripInfo && tripInfo.color) || "unknown";
   }
 
   function updateVehicles(entities) {
@@ -316,22 +320,32 @@ message Position {
       const tripInfo = tripInfoByTripId.get(tripId);
       const displayName = (tripInfo && tripInfo.line) || tripId || "okänd";
 
+      // Filtrera bort okända först när lookup är klar
       if (staticDataLoaded && displayName === "okänd") continue;
 
       seenIds.add(id);
+      const newIconKey = iconKeyFor(tripInfo);
 
       if (markers.has(id)) {
         const entry = markers.get(id);
+        // Uppdatera position
         entry.marker.setLatLng([lat, lon]);
+        // Uppdatera ikon om färgen nu är känd (t.ex. efter att trip_lookup laddats)
+        if (entry.iconKey !== newIconKey) {
+          entry.marker.setIcon(makeDivIcon(tripInfo));
+          entry.iconKey = newIconKey;
+          entry.tripInfo = tripInfo;
+        }
       } else {
         const marker = L.marker([lat, lon], {
           icon: makeDivIcon(tripInfo),
           interactive: false,
         }).addTo(map);
-        markers.set(id, { marker, tripInfo });
+        markers.set(id, { marker, tripInfo, iconKey: newIconKey });
       }
     }
 
+    // Ta bort fordon som försvunnit
     for (const [id, entry] of markers.entries()) {
       if (!seenIds.has(id)) {
         map.removeLayer(entry.marker);
@@ -355,6 +369,9 @@ message Position {
       }
       staticDataLoaded = true;
       console.log(`Laddade ${tripInfoByTripId.size} resor för bakgrundskartan`);
+
+      // Rita om med rätt färger direkt när lookup är klar
+      if (lastEntities) updateVehicles(lastEntities);
     } catch (err) {
       console.warn("Kunde inte ladda trip_lookup:", err);
     }
@@ -372,6 +389,7 @@ message Position {
   async function pollLoop() {
     try {
       const entities = await fetchVehiclePositions();
+      lastEntities = entities;
       updateVehicles(entities);
     } catch (err) {
       console.warn("Kunde inte hämta fordon:", err.message);
@@ -382,7 +400,7 @@ message Position {
 
   (async function init() {
     await loadProtoSchema();
-    loadTripLookup();
+    loadTripLookup();   // kör parallellt
     pollLoop();
   })();
 </script>
