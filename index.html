@@ -6,7 +6,6 @@
 <title>Skåne Live – realtidskarta över kollektivtrafiken</title>
 <meta name="description" content="Live-data över kollektivtrafiken i Skåne Län — se bussar och tåg röra sig i realtid på kartan.">
 <link rel="canonical" href="https://skånelive.se/">
-<!-- Open Graph — hur länken ser ut när den delas i t.ex. Messenger, Slack, iMessage, Discord -->
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://skånelive.se/">
 <meta property="og:title" content="Skåne Live">
@@ -15,7 +14,6 @@
 <meta property="og:image" content="https://skånelive.se/images/og-preview.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<!-- Twitter/X-kort -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://skånelive.se/images/og-preview.png">
 <meta name="twitter:title" content="Skåne Live">
@@ -252,8 +250,6 @@
     top: 0;
     right: 0;
   }
-
-  /* === Följ-knapp i popup === */
   .follow-btn {
     display: block;
     width: 100%;
@@ -273,8 +269,6 @@
     border-color: var(--accent);
     background: #222;
   }
-
-  /* === HUD nere i mitten === */
   #follow-hud {
     display: none;
     position: absolute;
@@ -326,7 +320,6 @@
     border-color: var(--accent);
     background: #222;
   }
-
   #config-banner {
     position: absolute;
     z-index: 1000;
@@ -440,8 +433,6 @@
   </header>
   <div style="position: relative; height: 100%;">
     <div id="map"></div>
-
-    <!-- Fast HUD för följd resa -->
     <div id="follow-hud">
       <div class="follow-hud-inner">
         <div id="follow-hud-text"></div>
@@ -454,9 +445,6 @@
 <script src="https://unpkg.com/protobufjs@7.2.6/dist/protobuf.min.js"></script>
 <script>
 console.time("⏱ TOTALT: skriptstart → första fordonet synligt");
-// ============================================================
-// KONFIGURATION – ändra detta
-// ============================================================
 const PROXY_URL = "https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev";
 const TRIP_LOOKUP_URL = "data/trip_lookup.json";
 const RAIL_LINES_URL = "data/rail_lines.json";
@@ -465,9 +453,6 @@ const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
 const POLL_INTERVAL_MS = 7000;
 const MAP_CENTER = [55.605, 12.9998];
 const MAP_ZOOM = 10.5;
-// ============================================================
-// Minimal GTFS-Realtime protobuf-schema
-// ============================================================
 const GTFS_RT_PROTO = `
 syntax = "proto2";
 package transit_realtime;
@@ -504,9 +489,6 @@ message Position {
   optional float speed = 5;
 }
 `;
-// ============================================================
-// Karta — Leaflet + Cartos riktiga Dark Matter-rastertiles
-// ============================================================
 const mapContainer = document.getElementById("map");
 const menuBtn = document.getElementById("menu-btn");
 const mobileMenu = document.getElementById("mobile-menu");
@@ -581,23 +563,38 @@ followHudClose.addEventListener("click", (e) => {
   stopFollow();
 });
 
+// FIX: Leaflets interna "_animatingZoom"-flagga hann tydligen inte sättas
+// i tid när zoomstart avfyrades, så VÅRA EGNA flyTo/panTo/setZoom-anrop
+// under följning tolkades felaktigt som att användaren själv drog i
+// kartan — vilket avbröt följningen direkt. Håller nu koll på detta helt
+// själva med en egen, robust flagga i stället.
+let programmaticCameraMove = false;
+let programmaticMoveResetTimer = null;
+
+function beginProgrammaticCameraMove() {
+  programmaticCameraMove = true;
+  clearTimeout(programmaticMoveResetTimer);
+  programmaticMoveResetTimer = setTimeout(() => {
+    programmaticCameraMove = false;
+  }, 3200);
+}
+
+function stopFollowIfUserInitiated() {
+  if (programmaticCameraMove) return;
+  stopFollow();
+}
+
 window.startFollow = function(id) {
   const entry = markers.get(id);
   if (!entry) return;
-
-  // Stäng alla popups
   map.closePopup();
   for (const e of markers.values()) {
     e.pinned = false;
   }
-
   followedId = id;
-
-  // Visa HUD och fyll med info
   updateFollowHud(entry);
   followHud.classList.add("visible");
-
-  // Zooma in och centrera mjukt
+  beginProgrammaticCameraMove();
   map.flyTo(entry.marker.getLatLng(), FOLLOW_ZOOM, {
     duration: 1.4,
     easeLinearity: 0.2
@@ -619,7 +616,6 @@ function updateFollowHud(entry) {
   const speedText = entry.lastSpeed != null
     ? Math.round(entry.lastSpeed * 3.6) + " km/h"
     : "okänd";
-
   const title = lineLabelFor(tripInfo, displayName);
   followHudText.innerHTML = `
     <b>Nu följs: ${title}</b>
@@ -628,29 +624,19 @@ function updateFollowHud(entry) {
   `;
 }
 
-// Avbryt följning om användaren själv drar/zoomar
-map.on("dragstart", stopFollow);
-map.on("zoomstart", (e) => {
-  // Undvik att avbryta vår egen flyTo
-  if (!e.target._animatingZoom) stopFollow();
-});
+map.on("dragstart", stopFollowIfUserInitiated);
+map.on("zoomstart", stopFollowIfUserInitiated);
 
 const statusEl = document.getElementById("status");
 function setStatus(state, text) {
   statusEl.className = state;
   statusEl.innerHTML = `<span class="dot"></span>${text}`;
 }
-// ============================================================
-// Klassificering & färger
-// ============================================================
 function isRailRouteType(routeType) {
   const n = parseInt(routeType, 10);
   if (Number.isNaN(n)) return false;
   return n === 2 || (n >= 100 && n < 200);
 }
-// ============================================================
-// Statisk linjedata
-// ============================================================
 const tripInfoByTripId = new Map();
 const routeLinesRenderer = L.canvas({ padding: 0.5 });
 const routeLinesLayer = L.layerGroup().addTo(map);
@@ -665,9 +651,6 @@ function drawAllRailLines(lines) {
     }).addTo(routeLinesLayer);
   }
 }
-// ============================================================
-// Fordonsmarkörer
-// ============================================================
 const markers = new Map();
 let staticDataLoaded = false;
 const ZOOM_LABEL_THRESHOLD = 12;
@@ -685,10 +668,7 @@ function renderPopupHtml(baseHtml, pinned, id) {
   let html = pinned
     ? baseHtml.replace('<div class="popup-content">', `<div class="popup-content">${PIN_ICON_SVG}`)
     : baseHtml;
-
-  // Visa inte "Följ resan"-knappen om vi redan följer detta fordon
   if (followedId === id) return html;
-
   html = html.replace(
     '</div>',
     `<button class="follow-btn" onclick="event.stopPropagation(); window.startFollow('${id}')">Följ resan</button></div>`
@@ -770,15 +750,12 @@ function updateVehicles(entities) {
       entry.id = id;
       if (map.hasLayer(entry.popup)) entry.popup.setLatLng([lat, lon]);
       entry.marker.setLatLng([lat, lon]);
-
-      // Uppdatera popup bara om den inte är stängd pga följning
       if (followedId !== id) {
         entry.popup.setContent(renderPopupHtml(popupHtml, entry.pinned, id));
       }
-
-      // === SMOOTH FÖLJNING + uppdatera HUD ===
       if (followedId === id) {
         updateFollowHud(entry);
+        beginProgrammaticCameraMove();
         map.panTo([lat, lon], {
           animate: true,
           duration: 2.8,
@@ -800,7 +777,7 @@ function updateVehicles(entities) {
       };
       markers.set(id, newEntry);
       marker.on("mouseover", () => {
-        if (followedId === id) return; // visa inte popup medan vi följer
+        if (followedId === id) return;
         popup.setLatLng(marker.getLatLng());
         popup.openOn(map);
       });
@@ -830,9 +807,6 @@ function updateVehicles(entities) {
     }
   }
 }
-// ============================================================
-// Hämta och tolka protobuf-data
-// ============================================================
 let FeedMessageType = null;
 async function loadProtoSchema() {
   const root = protobuf.parse(GTFS_RT_PROTO).root;
@@ -891,9 +865,6 @@ async function pollLoop() {
     setTimeout(pollLoop, POLL_INTERVAL_MS);
   }
 }
-// ============================================================
-// Riktiga tågstationer
-// ============================================================
 const TRAIN_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="13" height="13">
     <rect x="5" y="3" width="14" height="14" rx="4" fill="currentColor"/>
@@ -920,9 +891,6 @@ function drawRealTrainStations(stations) {
   }
   console.log(`Ritade ${trainStationMarkers.size} riktiga tågstationer från Trafiklabs data`);
 }
-// ============================================================
-// ResRobot
-// ============================================================
 const STATION_EXT_IDS = {
 };
 window.lookupStationId = async function (name) {
@@ -968,9 +936,6 @@ async function updateResRobotDepartures() {
     await new Promise((r) => setTimeout(r, 300));
   }
 }
-// ============================================================
-// Besöksräknare
-// ============================================================
 async function loadVisitorStats() {
   const todayEl = document.getElementById("visitors-today");
   const monthEl = document.getElementById("visitors-month");
