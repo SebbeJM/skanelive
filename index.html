@@ -569,6 +569,11 @@ followHudClose.addEventListener("click", (e) => {
 // kartan — vilket avbröt följningen direkt. Håller nu koll på detta helt
 // själva med en egen, robust flagga i stället.
 let programmaticCameraMove = false;
+// Blir true om ANVÄNDAREN själv zoomar under en pågående följning —
+// då slutar vi tvinga tillbaka till FOLLOW_ZOOM varje uppdatering, så
+// att zoomningen faktiskt "håller i sig" i stället för att kännas
+// meningslös. Nollställs varje gång en NY följning påbörjas.
+let userAdjustedZoomDuringFollow = false;
 let programmaticMoveResetTimer = null;
 
 function beginProgrammaticCameraMove(durationMs) {
@@ -597,6 +602,7 @@ window.startFollow = function(id) {
     e.pinned = false;
   }
   followedId = id;
+  userAdjustedZoomDuringFollow = false;
   updateFollowHud(entry);
   followHud.classList.add("visible");
   beginProgrammaticCameraMove(900);
@@ -646,8 +652,22 @@ function updateFollowHud(entry) {
   `;
 }
 
+// Bara riktig dragning (panorering) och klick avbryter följningen.
+// Zoom (scrollhjul, pinch, +/- -knapparna) gör INTE det längre — man
+// ska kunna zooma in/ut fritt medan man följer en resa. Leaflets EGNA
+// "click"-händelse (till skillnad från en rå DOM-lyssnare) avfyras
+// heller aldrig för klick på kontroller som zoom-knapparna, bara på
+// själva kartan.
 map.on("dragstart", stopFollowIfUserInitiated);
-map.on("zoomstart", stopFollowIfUserInitiated);
+map.on("click", stopFollowIfUserInitiated);
+// Kommer bara ihåg ANVÄNDARENS egen zoomning (inte våra egna
+// map.setZoom(FOLLOW_ZOOM, ...)-anrop under följning) — se
+// userAdjustedZoomDuringFollow ovan.
+map.on("zoomend", () => {
+  if (followedId && !programmaticCameraMove) {
+    userAdjustedZoomDuringFollow = true;
+  }
+});
 
 const statusEl = document.getElementById("status");
 function setStatus(state, text) {
@@ -790,7 +810,7 @@ function updateVehicles(entities) {
           easeLinearity: 1, // linjär, matchar ikonens egen linjära CSS-glidning
           noMoveStart: true
         });
-        if (Math.abs(map.getZoom() - FOLLOW_ZOOM) > 0.4) {
+        if (!userAdjustedZoomDuringFollow && Math.abs(map.getZoom() - FOLLOW_ZOOM) > 0.4) {
           map.setZoom(FOLLOW_ZOOM, { animate: true });
         }
       }
