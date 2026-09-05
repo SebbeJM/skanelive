@@ -603,6 +603,7 @@ window.startFollow = function(id) {
 
 function stopFollow() {
   if (!followedId) return;
+  console.log(`⏱ Slutar följa ${followedId}`);
   followedId = null;
   followHud.classList.remove("visible");
   followHudText.innerHTML = "";
@@ -738,6 +739,7 @@ function updateVehicles(entities) {
         entry.iconKey = iconKey;
       }
       entry.tripInfo = tripInfo;
+      entry.missedPolls = 0;
       entry.moving = isMoving;
       entry.lastSpeed = speed;
       const now = Date.now();
@@ -754,6 +756,7 @@ function updateVehicles(entities) {
         entry.popup.setContent(renderPopupHtml(popupHtml, entry.pinned, id));
       }
       if (followedId === id) {
+        console.log(`⏱ Följer ${id}: uppdaterar kameraposition till`, [lat, lon]);
         updateFollowHud(entry);
         beginProgrammaticCameraMove();
         map.panTo([lat, lon], {
@@ -800,6 +803,13 @@ function updateVehicles(entities) {
   }
   for (const [id, entry] of markers.entries()) {
     if (!seenIds.has(id)) {
+      // Ta inte bort ett fordon direkt bara för att det saknades i EN enda
+      // hämtningsomgång — Trafiklabs data kan ha korta, tillfälliga luckor
+      // som inte betyder att fordonet faktiskt slutat köra. Vänta tills
+      // det saknats flera gånger i rad, annars kunde följningen (och
+      // vanliga markörer) försvinna helt i onödan.
+      entry.missedPolls = (entry.missedPolls || 0) + 1;
+      if (entry.missedPolls < 3) continue;
       if (followedId === id) stopFollow();
       map.removeLayer(entry.marker);
       map.closePopup(entry.popup);
