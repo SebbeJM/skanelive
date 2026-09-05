@@ -351,7 +351,14 @@ console.time("⏱ TOTALT: skriptstart → första fordonet synligt");
 // KONFIGURATION – ändra detta
 // ============================================================
 const PROXY_URL = "https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev";
-const ROUTES_URL = `${PROXY_URL}/routes`;
+// De tre färdiga JSON-filerna byggs av ett gratis GitHub Actions-schema
+// en gång per natt (se build-gtfs.js och .github/workflows/build-gtfs.yml)
+// och ligger i samma repo som den här sidan — mycket snabbare än att
+// packa upp/tolka hela GTFS-zippen (flera MB CSV) i webbläsaren, vilket
+// vi gjorde tidigare, och helt gratis (ingen Cloudflare-betalplan behövs).
+const TRIP_LOOKUP_URL = "data/trip_lookup.json";
+const RAIL_LINES_URL = "data/rail_lines.json";
+const TRAIN_STATIONS_URL = "data/train_stations.json";
 
 // Gratis Carto-nyckel (carto.com/basemaps/apikey) för Cartos RIKTIGA Dark
 // Matter-rastertiles.
@@ -360,9 +367,6 @@ const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
 const POLL_INTERVAL_MS = 7000;
 const MAP_CENTER = [55.605, 12.9998]; // centrerad över Malmö vid start
 const MAP_ZOOM = 10.5;
-
-const MANUAL_ROUTE_COLORS = {
-};
 
 // ============================================================
 // Minimal GTFS-Realtime protobuf-schema
@@ -458,7 +462,7 @@ map.on("moveend", () => mapContainer.classList.remove("map-moving"));
 
 map.on("zoomend", () => {
   for (const entry of markers.values()) {
-    entry.marker.setIcon(makeDivIcon(entry.routeInfo, entry.moving));
+    entry.marker.setIcon(makeDivIcon(entry.tripInfo, entry.moving));
   }
 });
 
@@ -481,125 +485,33 @@ function setStatus(state, text) {
 // ============================================================
 // Klassificering & färger
 // ============================================================
+// OBS: all färgklassificering och Douglas-Peucker-förenkling görs numera
+// på SERVERN (i worker.js, en gång per natt) — se trip_lookup.json,
+// rail_lines.json och train_stations.json. isRailRouteType behövs bara
+// kvar här för CSS-klassen på markören (se markerClassName nedan).
 function isRailRouteType(routeType) {
   const n = parseInt(routeType, 10);
   if (Number.isNaN(n)) return false;
   return n === 2 || (n >= 100 && n < 200);
 }
 
-function simplifyPoints(points, toleranceMeters) {
-  if (points.length < 3) return points;
-
-  function perpendicularDistanceMeters(p, a, b) {
-    const latRef = (a[0] + b[0]) / 2;
-    const cosLat = Math.cos((latRef * Math.PI) / 180);
-    const mPerDegLat = 111320;
-    const ax = a[1] * cosLat * mPerDegLat, ay = a[0] * mPerDegLat;
-    const bx = b[1] * cosLat * mPerDegLat, by = b[0] * mPerDegLat;
-    const px = p[1] * cosLat * mPerDegLat, py = p[0] * mPerDegLat;
-    const dx = bx - ax, dy = by - ay;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return Math.hypot(px - ax, py - ay);
-    const t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
-    const projX = ax + Math.max(0, Math.min(1, t)) * dx;
-    const projY = ay + Math.max(0, Math.min(1, t)) * dy;
-    return Math.hypot(px - projX, py - projY);
-  }
-
-  function simplifySegment(pts, tol) {
-    if (pts.length < 3) return pts;
-    let maxDist = 0, maxIdx = 0;
-    const a = pts[0], b = pts[pts.length - 1];
-    for (let i = 1; i < pts.length - 1; i++) {
-      const d = perpendicularDistanceMeters(pts[i], a, b);
-      if (d > maxDist) { maxDist = d; maxIdx = i; }
-    }
-    if (maxDist > tol) {
-      const left = simplifySegment(pts.slice(0, maxIdx + 1), tol);
-      const right = simplifySegment(pts.slice(maxIdx), tol);
-      return left.slice(0, -1).concat(right);
-    }
-    return [a, b];
-  }
-
-  return simplifySegment(points, toleranceMeters);
-}
-
-function classifyColorForRoute(shortName, longName, routeType) {
-  const name = `${shortName} ${longName || ""}`.toLowerCase();
-  if (name.includes("öresundståg")) return "a3a9ad";
-  if (isRailRouteType(routeType)) return "645fa2";
-  if (name.includes("pågatåg")) return "645fa2";
-
-  const trimmed = (shortName || "").trim();
-  if (/^\d+$/.test(trimmed)) {
-    if (trimmed.length <= 2) return "2e7d32";
-    if (trimmed.length === 3) return "f9a825";
-  }
-  if (/^skåneexpressen/i.test(trimmed)) return "f9a825";
-
-  return null;
-}
-
-function fallbackColorForRoute(id) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  }
-  const hue = hash % 360;
-  return hslToHex(hue, 65, 45);
-}
-
-function hslToHex(h, s, l) {
-  s /= 100;
-  l /= 100;
-  const k = (n) => (n + h / 30) % 12;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-  const toHex = (x) => Math.round(255 * x).toString(16).padStart(2, "0");
-  return `${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
-}
-
 // ============================================================
 // Statisk linjedata
 // ============================================================
-const routesById = new Map();
-const routeIdByTripId = new Map();
-const headsignByTripId = new Map();
-const shapePointsById = new Map();
-const shapeIdsByRoute = new Map();
-const drawnRouteShapes = new Set();
-const stopsById = new Map();
-const railStopIds = new Set();
+// Nyckeln är trip_id direkt (inte route_id) — matchar exakt vad
+// realtidsflödet faktiskt ger oss, ingen extra koppling behövs.
+const tripInfoByTripId = new Map();
 
 const routeLinesRenderer = L.canvas({ padding: 0.5 });
 const routeLinesLayer = L.layerGroup().addTo(map);
 
-function ensureRouteShapeDrawn(routeId, routeInfo) {
-  if (!routeId || drawnRouteShapes.has(routeId)) return;
-  // Om vi saknar routeInfo (routesById) helt beror det oftast bara på att
-  // den statiska datan inte hunnit laddas än — INTE på att linjen faktiskt
-  // saknar info. Vänta med att markera "klar" tills vi antingen vet
-  // (routeInfo finns) eller den statiska datan är helt klar och vi
-  // fortfarande inte hittar något (då vet vi definitivt att den saknas).
-  if (!routeInfo && !staticDataLoaded) return;
-  if (!routeInfo || !isRailRouteType(routeInfo.routeType)) {
-    drawnRouteShapes.add(routeId);
-    return;
-  }
-  drawnRouteShapes.add(routeId);
-
-  if (routeInfo.brand === "oresundstag") return;
-
-  const shapeIds = shapeIdsByRoute.get(routeId);
-  if (!shapeIds) return;
-
-  const color = routeInfo && routeInfo.color ? `#${routeInfo.color}` : "#7d9088";
-  for (const shapeId of shapeIds) {
-    const points = shapePointsById.get(shapeId);
-    if (!points || points.length < 4) continue;
-    L.polyline(points, {
-      color,
+// Ritar ALLA tåglinjer direkt från den redan färdiga (server-byggda)
+// rail_lines.json — ingen egen förenkling/filtrering behövs klientsidan
+// längre, servern har redan gjort det jobbet en gång för alla.
+function drawAllRailLines(lines) {
+  for (const line of lines) {
+    L.polyline(line.points, {
+      color: `#${line.color}`,
       weight: 3,
       opacity: 0.65,
       renderer: routeLinesRenderer,
@@ -608,20 +520,12 @@ function ensureRouteShapeDrawn(routeId, routeInfo) {
   }
 }
 
-function drawAllRailLines() {
-  for (const [routeId, routeInfo] of routesById) {
-    if (isRailRouteType(routeInfo.routeType)) {
-      ensureRouteShapeDrawn(routeId, routeInfo);
-    }
-  }
-}
-
 // ============================================================
 // Fordonsmarkörer
 // ============================================================
 const markers = new Map();
-// Blir true först när loadRouteColors() (trips.txt m.fl.) är klar — se
-// updateVehicles() för varför detta styr "okänd"-filtret.
+// Blir true först när loadRouteColors() (trip_lookup.json m.fl.) är klar —
+// se updateVehicles() för varför detta styr "okänd"-filtret.
 let staticDataLoaded = false;
 
 const ZOOM_LABEL_THRESHOLD = 12;
@@ -642,17 +546,17 @@ function renderPopupHtml(baseHtml, pinned) {
   return pinned ? baseHtml.replace("<div class=\"popup-content\">", `<div class="popup-content">${PIN_ICON_SVG}`) : baseHtml;
 }
 
-function lineLabelFor(routeInfo, displayName) {
-  if (routeInfo && routeInfo.brand === "oresundstag") return `Öresundståg ${displayName}`;
-  if (routeInfo && routeInfo.brand === "pagatag") return `Pågatåg ${displayName}`;
+function lineLabelFor(tripInfo, displayName) {
+  if (tripInfo && tripInfo.brand === "oresundstag") return `Öresundståg ${displayName}`;
+  if (tripInfo && tripInfo.brand === "pagatag") return `Pågatåg ${displayName}`;
   return `Linje ${displayName}`;
 }
 
-function iconHtml(routeInfo, moving) {
-  const hasColor = routeInfo && routeInfo.color;
-  const bg = hasColor ? `#${routeInfo.color}` : null;
-  const fg = routeInfo && routeInfo.textColor ? `#${routeInfo.textColor}` : "#eef1ec";
-  const label = routeInfo && routeInfo.shortName ? routeInfo.shortName : "";
+function iconHtml(tripInfo, moving) {
+  const hasColor = tripInfo && tripInfo.color;
+  const bg = hasColor ? `#${tripInfo.color}` : null;
+  const fg = tripInfo && tripInfo.textColor ? `#${tripInfo.textColor}` : "#eef1ec";
+  const label = tripInfo && tripInfo.line ? tripInfo.line : "";
   const size = iconSizeForZoom();
   const fontSize = Math.max(7, Math.round(size * 0.45));
   const jitterDelay = moving ? `animation-delay:-${(Math.random() * 0.9).toFixed(2)}s;` : "";
@@ -662,15 +566,15 @@ function iconHtml(routeInfo, moving) {
   return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
 }
 
-function markerClassName(routeInfo) {
-  return `vehicle-marker${routeInfo && isRailRouteType(routeInfo.routeType) ? " rail" : ""}`;
+function markerClassName(tripInfo) {
+  return `vehicle-marker${tripInfo && isRailRouteType(tripInfo.type) ? " rail" : ""}`;
 }
 
-function makeDivIcon(routeInfo, moving) {
+function makeDivIcon(tripInfo, moving) {
   const size = iconSizeForZoom();
   return L.divIcon({
-    className: markerClassName(routeInfo),
-    html: iconHtml(routeInfo, moving),
+    className: markerClassName(tripInfo),
+    html: iconHtml(tripInfo, moving),
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -688,46 +592,41 @@ function updateVehicles(entities) {
     const lat = vp.position.latitude;
     const lon = vp.position.longitude;
     const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
-    let routeId = vp.trip && vp.trip.routeId ? vp.trip.routeId : "";
-    if (!routeId && tripId) {
-      routeId = routeIdByTripId.get(tripId) || "";
-    }
-    const routeInfo = routesById.get(routeId);
-    const displayName = (routeInfo && routeInfo.shortName) || routeId || "okänd";
+    // Trip_lookup.json är nyckeln direkt på trip_id — ingen extra koppling
+    // via route_id behövs längre, servern har redan gjort den kopplingen.
+    const tripInfo = tripInfoByTripId.get(tripId);
+    const displayName = (tripInfo && tripInfo.line) || tripId || "okänd";
     const isMoving = vp.position.speed != null && vp.position.speed > 0.5;
 
     // Filtrera bara bort "okända" fordon EFTER att den statiska datan
-    // (trips.txt m.fl.) hunnit laddas klart. Innan dess skulle filtret
-    // annars dölja ALLA fordon (eftersom linjenumret kommer just därifrån),
-    // och sidan skulle se helt tom ut i onödan tills den tunga datan är
-    // klar — även om själva bussarna redan hämtats för länge sedan.
+    // (trip_lookup.json) hunnit laddas klart. Innan dess skulle filtret
+    // annars dölja ALLA fordon, och sidan skulle se helt tom ut i onödan
+    // tills den (numera snabba) uppslagstabellen laddat klart.
     if (staticDataLoaded && displayName === "okänd") {
       continue;
     }
 
     seenIds.add(id);
 
-    ensureRouteShapeDrawn(routeId, routeInfo);
-
-    const headsign = headsignByTripId.get(tripId) || "";
+    const destination = (tripInfo && tripInfo.destination) || "";
 
     const popupHtml = `
       <div class="popup-content">
-        <b>${lineLabelFor(routeInfo, displayName)}</b>
-        ${headsign ? `På väg mot: ${headsign}<br>` : ""}
+        <b>${lineLabelFor(tripInfo, displayName)}</b>
+        ${destination ? `På väg mot: ${destination}<br>` : ""}
         Hastighet: ${vp.position.speed != null ? Math.round(vp.position.speed * 3.6) + " km/h" : "okänd"}
       </div>
     `;
 
-    const iconKey = `${(routeInfo && routeInfo.color) || ""}|${displayName}|${shouldShowLabels()}|${isMoving}`;
+    const iconKey = `${(tripInfo && tripInfo.color) || ""}|${displayName}|${shouldShowLabels()}|${isMoving}`;
 
     if (markers.has(id)) {
       const entry = markers.get(id);
       if (entry.iconKey !== iconKey) {
-        entry.marker.setIcon(makeDivIcon(routeInfo, isMoving));
+        entry.marker.setIcon(makeDivIcon(tripInfo, isMoving));
         entry.iconKey = iconKey;
       }
-      entry.routeInfo = routeInfo;
+      entry.tripInfo = tripInfo;
       entry.moving = isMoving;
       const now = Date.now();
       const elapsed = entry.lastUpdateTime ? now - entry.lastUpdateTime : POLL_INTERVAL_MS;
@@ -740,12 +639,12 @@ function updateVehicles(entities) {
       entry.marker.setLatLng([lat, lon]);
       entry.popup.setContent(renderPopupHtml(popupHtml, entry.pinned));
     } else {
-      const marker = L.marker([lat, lon], { icon: makeDivIcon(routeInfo, isMoving) }).addTo(map);
+      const marker = L.marker([lat, lon], { icon: makeDivIcon(tripInfo, isMoving) }).addTo(map);
       const popup = L.popup({ offset: [0, -14], closeButton: false, autoClose: false, closeOnClick: false })
         .setContent(popupHtml);
 
       const newEntry = {
-        marker, popup, iconKey, routeInfo, moving: isMoving,
+        marker, popup, iconKey, tripInfo, moving: isMoving,
         lastUpdateTime: Date.now(), pinned: false, popupBaseHtml: popupHtml,
       };
       markers.set(id, newEntry);
@@ -790,214 +689,37 @@ async function loadProtoSchema() {
   FeedMessageType = root.lookupType("transit_realtime.FeedMessage");
 }
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error(`Kunde inte ladda ${src}`));
-    document.head.appendChild(s);
-  });
-}
-const jszipReady = loadScript("https://unpkg.com/jszip@3.10.1/dist/jszip.min.js");
-const papaparseReady = loadScript("https://unpkg.com/papaparse@5.4.1/papaparse.min.js");
-
 // ============================================================
-// Statisk linjedata (färger, trips, shapes) – hämtas en gång vid start
+// Statisk linjedata — tre färdiga, servergenererade JSON-filer i stället
+// för att packa upp/tolka hela GTFS-zippen (flera MB CSV) själv. Se
+// worker.js för hur dessa byggs (en gång per natt).
 // ============================================================
-// Tolkar en CSV-textsträng i en BAKGRUNDSTRÅD (Web Worker, inbyggt i Papa
-// Parse via worker:true) i stället för på huvudtråden. Utan detta fryser
-// hela sidan (inklusive redan hämtade bussars rendering!) medan stora
-// filer som stop_times.txt (47 000+ resor) tolkas — JavaScript kan bara
-// göra en sak i taget på huvudtråden, "väntar inte på den"-strukturen vi
-// byggt hindrar bara NÄTVERKSHÄMTNINGEN från att blockera, inte själva
-// CPU-arbetet med att tolka datan när den väl kommit fram.
-// OBS: transformHeader-funktioner går inte att skicka till en Worker
-// (går inte att serialisera), så vi tar bort en eventuell BOM manuellt
-// ur texten INNAN parsningen i stället.
-function parseCsvInBackground(text) {
-  const cleanText = text.replace(/^\uFEFF/, "");
-  return new Promise((resolve) => {
-    Papa.parse(cleanText, {
-      header: true,
-      skipEmptyLines: true,
-      worker: true,
-      complete: resolve,
-    });
-  });
-}
-
 async function loadRouteColors() {
-  await Promise.all([jszipReady, papaparseReady]);
   try {
-    const res = await fetch(ROUTES_URL, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const zipBuffer = await res.arrayBuffer();
+    const [tripLookupRes, railLinesRes, stationsRes] = await Promise.all([
+      fetch(TRIP_LOOKUP_URL, { cache: "no-store" }),
+      fetch(RAIL_LINES_URL, { cache: "no-store" }),
+      fetch(TRAIN_STATIONS_URL, { cache: "no-store" }),
+    ]);
+    if (!tripLookupRes.ok) throw new Error(`trip_lookup.json: HTTP ${tripLookupRes.status}`);
+    if (!railLinesRes.ok) throw new Error(`rail_lines.json: HTTP ${railLinesRes.status}`);
+    if (!stationsRes.ok) throw new Error(`train_stations.json: HTTP ${stationsRes.status}`);
 
-    const zip = await JSZip.loadAsync(zipBuffer);
-    const routesFile = zip.file("routes.txt");
-    if (!routesFile) throw new Error("routes.txt saknas i zip-filen");
+    const tripLookup = await tripLookupRes.json();
+    const railLinesData = await railLinesRes.json();
+    const stationsData = await stationsRes.json();
 
-    const csvText = await routesFile.async("string");
-    const parsed = await parseCsvInBackground(csvText);
-
-    for (const row of parsed.data) {
-      const id = (row.route_id || "").trim();
-      if (!id) continue;
-      const shortName = (row.route_short_name || "").trim();
-      const longName = (row.route_long_name || "").trim();
-      const routeType = (row.route_type || "").trim();
-      const officialColor = (row.route_color || "").trim();
-      const manualColor = MANUAL_ROUTE_COLORS[shortName];
-      const heuristicColor = classifyColorForRoute(shortName, longName, routeType);
-      routesById.set(id, {
-        color: manualColor || officialColor || heuristicColor || fallbackColorForRoute(id),
-        textColor: (row.route_text_color || "").trim(),
-        shortName,
-        routeType,
-        brand: isRailRouteType(routeType) ? "pagatag" : null,
-        colorSource: manualColor ? "manual" : officialColor ? "official" : heuristicColor ? "heuristic" : "auto",
-      });
+    for (const [tripId, info] of Object.entries(tripLookup.trips)) {
+      tripInfoByTripId.set(tripId, info);
     }
-    console.log(`Laddade färger för ${routesById.size} linjer`);
+    console.log(`Laddade uppslagstabell för ${tripInfoByTripId.size} resor (byggd ${tripLookup.builtAt})`);
 
-    const tripsFile = zip.file("trips.txt");
-    if (tripsFile) {
-      const tripsText = await tripsFile.async("string");
-      const parsedTrips = await parseCsvInBackground(tripsText);
-      for (const row of parsedTrips.data) {
-        const tripId = (row.trip_id || "").trim();
-        const routeId = (row.route_id || "").trim();
-        const shapeId = (row.shape_id || "").trim();
-        const headsign = (row.trip_headsign || "").trim();
-        if (tripId && routeId) routeIdByTripId.set(tripId, routeId);
-        if (tripId && headsign) headsignByTripId.set(tripId, headsign);
-        if (routeId && shapeId) {
-          if (!shapeIdsByRoute.has(routeId)) shapeIdsByRoute.set(routeId, new Set());
-          shapeIdsByRoute.get(routeId).add(shapeId);
-        }
-      }
-      console.log(`Laddade linjekoppling för ${routeIdByTripId.size} resor (trips)`);
-    }
+    drawAllRailLines(railLinesData.lines);
+    console.log(`Ritade ${railLinesData.lines.length} tåglinjer`);
 
-    const shapesFile = zip.file("shapes.txt");
-    if (shapesFile) {
-      const shapesText = await shapesFile.async("string");
-      const parsedShapes = await parseCsvInBackground(shapesText);
-      const raw = new Map();
-      for (const row of parsedShapes.data) {
-        const shapeId = (row.shape_id || "").trim();
-        const lat = parseFloat(row.shape_pt_lat);
-        const lon = parseFloat(row.shape_pt_lon);
-        const seq = parseInt(row.shape_pt_sequence, 10);
-        if (!shapeId || Number.isNaN(lat) || Number.isNaN(lon)) continue;
-        if (!raw.has(shapeId)) raw.set(shapeId, []);
-        raw.get(shapeId).push({ seq: Number.isNaN(seq) ? 0 : seq, lat, lon });
-      }
-      let processed = 0;
-      for (const [shapeId, points] of raw) {
-        points.sort((a, b) => a.seq - b.seq);
-        const simplified = simplifyPoints(points.map((p) => [p.lat, p.lon]), 8);
-        shapePointsById.set(shapeId, simplified);
-        processed++;
-        // Släpp huvudtråden var 200:e körväg, så resten av sidan (t.ex.
-        // redan hämtade bussars rendering) hinner köra emellanåt i stället
-        // för att allt fryser tills ALLA 1800+ körvägar är klara.
-        if (processed % 200 === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        }
-      }
-      console.log(`Laddade ${shapePointsById.size} körvägar (shapes, förenklade)`);
-    }
-
-    const stopsFile = zip.file("stops.txt");
-    if (stopsFile) {
-      const stopsText = await stopsFile.async("string");
-      const parsedStops = await parseCsvInBackground(stopsText);
-      for (const row of parsedStops.data) {
-        const stopId = (row.stop_id || "").trim();
-        const lat = parseFloat(row.stop_lat);
-        const lon = parseFloat(row.stop_lon);
-        if (!stopId || Number.isNaN(lat) || Number.isNaN(lon)) continue;
-        stopsById.set(stopId, { lat, lon, name: (row.stop_name || "").trim() });
-      }
-      console.log(`Laddade ${stopsById.size} hållplatser/stationer (stops)`);
-    }
-
-    const railTripIds = new Set();
-    for (const [tripId, rId] of routeIdByTripId) {
-      const info = routesById.get(rId);
-      if (info && isRailRouteType(info.routeType)) railTripIds.add(tripId);
-    }
-
-    const stopTimesFile = zip.file("stop_times.txt");
-    if (stopTimesFile) {
-      const stopTimesText = await stopTimesFile.async("string");
-      const parsedStopTimes = await parseCsvInBackground(stopTimesText);
-      const stopIdsByRoute = new Map();
-      const lastStopByTripId = new Map();
-
-      for (let i = 0; i < parsedStopTimes.data.length; i++) {
-        const row = parsedStopTimes.data[i];
-        const tripId = (row.trip_id || "").trim();
-        const stopId = (row.stop_id || "").trim();
-        if (!tripId || !stopId) continue;
-
-        const seq = parseInt(row.stop_sequence, 10);
-        const seqNum = Number.isNaN(seq) ? 0 : seq;
-        const existing = lastStopByTripId.get(tripId);
-        if (!existing || seqNum > existing.seq) {
-          lastStopByTripId.set(tripId, { seq: seqNum, stopId });
-        }
-
-        if (!railTripIds.has(tripId)) continue;
-        railStopIds.add(stopId);
-
-        const routeId = routeIdByTripId.get(tripId);
-        if (!routeId) continue;
-        if (!stopIdsByRoute.has(routeId)) stopIdsByRoute.set(routeId, new Set());
-        stopIdsByRoute.get(routeId).add(stopId);
-
-        // Släpp huvudtråden med jämna mellanrum — det här kan vara
-        // hundratusentals rader totalt.
-        if (i % 20000 === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        }
-      }
-
-      for (const [tripId, last] of lastStopByTripId) {
-        if (headsignByTripId.has(tripId)) continue;
-        const s = stopsById.get(last.stopId);
-        if (s && s.name) headsignByTripId.set(tripId, s.name);
-      }
-      console.log(`Gissade destination (sista hållplatsen) för ${headsignByTripId.size} av ${lastStopByTripId.size} resor`);
-      console.log(`Hittade ${railStopIds.size} hållplatser som trafikeras av tåg`);
-
-      const DENMARK_LON_THRESHOLD = 12.6;
-      let oresundstagCount = 0;
-      for (const [routeId, stopIds] of stopIdsByRoute) {
-        let isOresundstag = false;
-        for (const stopId of stopIds) {
-          const s = stopsById.get(stopId);
-          if (s && s.lon < DENMARK_LON_THRESHOLD) {
-            isOresundstag = true;
-            break;
-          }
-        }
-        if (!isOresundstag) continue;
-        oresundstagCount++;
-        const info = routesById.get(routeId);
-        if (!info) continue;
-        info.brand = "oresundstag";
-        if (info.colorSource === "heuristic" || info.colorSource === "auto") {
-          info.color = "a3a9ad";
-          info.colorSource = "heuristic";
-        }
-      }
-      console.log(`${oresundstagCount} linjer identifierade som Öresundståg (korsar till Danmark)`);
-    }
+    drawRealTrainStations(stationsData.stations);
   } catch (err) {
-    console.warn("Kunde inte ladda linjefärger:", err);
+    console.warn("Kunde inte ladda den servergenererade linjedatan:", err);
   }
 }
 
@@ -1031,32 +753,6 @@ async function pollLoop() {
 }
 
 // ============================================================
-// TILLFÄLLIG DIAGNOS — kör manuellt i konsolen: checkVrOperator()
-// ============================================================
-window.checkVrOperator = async function () {
-  await Promise.all([jszipReady, papaparseReady]);
-  console.log("Hämtar vr-operatörens statiska data...");
-  const res = await fetch(`${PROXY_URL}/routes-vr`, { cache: "no-store" });
-  if (!res.ok) {
-    console.error(`Kunde inte hämta vr-data: HTTP ${res.status}`);
-    return;
-  }
-  const zipBuffer = await res.arrayBuffer();
-  const zip = await JSZip.loadAsync(zipBuffer);
-  const routesFile = zip.file("routes.txt");
-  if (!routesFile) {
-    console.error("routes.txt saknas i vr-zipen");
-    return;
-  }
-  const csvText = await routesFile.async("string");
-  const parsed = Papa.parse(csvText, {
-    header: true,
-    skipEmptyLines: true,
-    transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
-  });
-  console.log(`vr-operatören har totalt ${parsed.data.length} linjer.`);
-};
-
 // ============================================================
 // Riktiga tågstationer, hämtade direkt från Trafiklabs data
 // ============================================================
@@ -1072,10 +768,9 @@ const TRAIN_ICON_SVG = `
 
 const trainStationMarkers = new Map();
 
-function drawRealTrainStations() {
-  for (const stopId of railStopIds) {
-    const s = stopsById.get(stopId);
-    if (!s || !s.name) continue;
+function drawRealTrainStations(stations) {
+  for (const s of stations) {
+    if (!s.name) continue;
 
     const icon = L.divIcon({
       className: "train-station-marker",
@@ -1154,8 +849,6 @@ async function updateResRobotDepartures() {
 
   loadRouteColors().then(() => {
     staticDataLoaded = true;
-    drawAllRailLines();
-    drawRealTrainStations();
 
     if (Object.values(STATION_EXT_IDS).some(Boolean)) {
       updateResRobotDepartures();
