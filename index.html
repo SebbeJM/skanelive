@@ -550,8 +550,11 @@ function enableMarkerTransitions() {
     entry.el.style.transitionProperty = "transform";
   }
   // Rita in fordon som just blivit synliga (panorering/zoom) direkt, i
-  // stället för att vänta upp till 7 sekunder på nästa hämtning.
-  if (lastEntities) updateVehicles(lastEntities);
+  // stället för att vänta upp till 7 sekunder på nästa hämtning. INTE
+  // om vi följer en resa just nu — updateVehicles() anropar då panTo()
+  // igen, vilket skulle trigga en ny moveend och skapa en oändlig loop
+  // som fastnar hela kameran.
+  if (lastEntities && !followedId) updateVehicles(lastEntities);
 }
 map.on("movestart", disableMarkerTransitions);
 map.on("moveend", enableMarkerTransitions);
