@@ -453,14 +453,15 @@ function minDistanceToPointMeters(points, target) {
     for (const shapeId of shapeIds) {
       const points = shapePointsById.get(shapeId);
       if (!points || points.length < 4) continue;
-      // REN DIAGNOSTIK (tar inte bort något automatiskt denna gång) —
-      // visar exakt hur nära varje Öresundståg-sträcka faktiskt kommer
-      // Kastrups riktiga koordinater, så vi kan identifiera precis
-      // vilken sträcka som INTE passerar där som en riktig mellan-
-      // hållplats (i stället för att bygga ett nytt automatiskt filter).
-      if (routeInfo.brand === "oresundstag" && kastrupCoords) {
+      // Riktig data visade ett tydligt gap: äkta sträckor genom Kastrup
+      // ligger under 230m bort, medan allt annat (spikraka genvägar,
+      // eller helt andra långdistans-varianter som ändå inte är
+      // relevanta på en Skåne-fokuserad karta) ligger 7000m+ bort.
+      // 1000m är därför en trygg, datadriven gräns — inte en gissning.
+      if (routeInfo.brand === "oresundstag") {
+        if (!kastrupCoords) continue;
         const dist = minDistanceToPointMeters(points, kastrupCoords);
-        console.log(`DIAGNOS Öresundståg-sträcka ${shapeId} (linje "${routeInfo.shortName}"): ${points.length} punkter, avstånd till Kastrup: ${dist.toFixed(0)}m`);
+        if (dist > 1000) continue;
       }
       railLines.push({ color: routeInfo.color, points });
     }
