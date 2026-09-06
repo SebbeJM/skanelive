@@ -426,14 +426,14 @@ async function buildGtfsArtifacts() {
     for (const shapeId of shapeIds) {
       const points = shapePointsById.get(shapeId);
       const deviation = points ? maxDeviationMeters(points) : 0;
-      const curved = deviation >= 100;
+      const curved = deviation >= 1000;
       // Diagnostik för ALLA tåglinjer nu, inte bara Öresundståg — så vi
       // kan hitta exakt vilken linje/sträcka en eventuell kvarvarande
       // spikrak felaktig sträcka hör till.
       const reason = !points || points.length < 4
         ? "för få punkter"
         : !curved
-          ? `för rak (avvek bara ${deviation.toFixed(0)}m från en rät linje, kräver 100m)`
+          ? `för rak (avvek bara ${deviation.toFixed(0)}m från en rät linje, kräver 1000m)`
           : null;
       console.log(`DIAGNOS linje "${routeInfo.shortName}" (${routeId}), sträcka ${shapeId}: ${points ? points.length : 0} punkter, avvikelse ${deviation.toFixed(0)}m${reason ? ` -> FILTRERAD BORT (${reason})` : " -> godkänd"}`);
       if (!points || points.length < 4 || !curved) continue;
