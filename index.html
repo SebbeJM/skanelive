@@ -269,23 +269,6 @@
     border-color: var(--accent);
     background: #222;
   }
-  #zoom-info {
-    position: absolute;
-    z-index: 900;
-    bottom: 8px;
-    left: 10px;
-    max-width: 260px;
-    background: rgba(13, 13, 13, 0.75);
-    color: var(--muted);
-    padding: 0.4rem 0.7rem;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    line-height: 1.35;
-    pointer-events: none;
-  }
-  #zoom-info b {
-    color: var(--fg);
-  }
   #follow-hud {
     display: none;
     position: absolute;
@@ -450,7 +433,6 @@
   </header>
   <div style="position: relative; height: 100%;">
     <div id="map"></div>
-    <div id="zoom-info"><b>Tänk på!</b> Vid in-/utzoomning kan fordonens position ta upp till 7 sekunder att uppdatera sig.</div>
     <div id="follow-hud">
       <div class="follow-hud-inner">
         <div id="follow-hud-text"></div>
@@ -648,16 +630,6 @@ followHudClose.addEventListener("click", (e) => {
 // kartan — vilket avbröt följningen direkt. Håller nu koll på detta helt
 // själva med en egen, robust flagga i stället.
 let programmaticCameraMove = false;
-// Blir true om ANVÄNDAREN själv zoomar under en pågående följning —
-// då slutar vi tvinga tillbaka till FOLLOW_ZOOM varje uppdatering, så
-// att zoomningen faktiskt "håller i sig" i stället för att kännas
-// meningslös. Nollställs varje gång en NY följning påbörjas.
-let userAdjustedZoomDuringFollow = false;
-// Sann ENDAST under det exakta, synkrona map.setZoom(FOLLOW_ZOOM,...)-
-// anropet ovan — mycket snävare än programmaticCameraMove, så en
-// riktig användarzoom aldrig kan missas bara för att den råkar ske
-// nära i tiden.
-let programmaticZoomCorrection = false;
 let programmaticMoveResetTimer = null;
 
 function beginProgrammaticCameraMove(durationMs) {
@@ -676,17 +648,11 @@ function beginProgrammaticCameraMove(durationMs) {
 window.startFollow = function(id) {
   const entry = markers.get(id);
   if (!entry) return;
-  // Leaflet stödjer ett inbyggt läge där scrollzoom alltid sker mot
-  // KARTANS CENTRUM i stället för muspekaren — precis vad vi vill ha
-  // under följning, så bussen alltid hålls i mitten oavsett var musen
-  // står medan man scrollar.
-  map.options.scrollWheelZoom = "center";
   map.closePopup();
   for (const e of markers.values()) {
     e.pinned = false;
   }
   followedId = id;
-  userAdjustedZoomDuringFollow = false;
   updateFollowHud(entry);
   followHud.classList.add("visible");
   beginProgrammaticCameraMove(900);
@@ -698,9 +664,6 @@ window.startFollow = function(id) {
 
 function stopFollow() {
   if (!followedId) return;
-  // Tillbaka till vanlig scrollzoom (mot muspekaren) när man inte
-  // längre följer någon resa.
-  map.options.scrollWheelZoom = true;
   const previouslyFollowedId = followedId;
   followedId = null;
 
@@ -768,20 +731,10 @@ map.on("dragend", () => { isDragging = false; });
 // klick som händer mitt i animationen — vilket var exakt varför
 // avbryt-klicket inte alltid fungerade.
 map.on("click", stopFollow);
-// Kommer bara ihåg ANVÄNDARENS egen zoomning (inte våra egna
-// map.setZoom(FOLLOW_ZOOM, ...)-anrop under följning) — se
-// userAdjustedZoomDuringFollow ovan.
-map.on("zoomend", () => {
-  if (followedId && !programmaticZoomCorrection) {
-    userAdjustedZoomDuringFollow = true;
-    // Centrera direkt tillbaka på den följda ikonen, oavsett var musen
-    // stod när man scrollade — annars zoomar Leaflet som standard mot
-    // muspekaren, vilket annars skulle få vyn att glida iväg från
-    // bussen om man inte råkade ha musen exakt över den.
-    const entry = markers.get(followedId);
-    if (entry) map.panTo(entry.marker.getLatLng(), { animate: false });
-  }
-});
+// Zoom avbryter följningen precis som dragning gör (samma anledning:
+// ett klick/en dragning representerar alltid en äkta användarhandling,
+// aldrig vår egen kod).
+map.on("zoomstart", stopFollow);
 
 const statusEl = document.getElementById("status");
 function setStatus(state, text) {
@@ -965,16 +918,6 @@ function updateVehicles(entities) {
           easeLinearity: 1, // linjär, matchar ikonens egen linjära CSS-glidning
           noMoveStart: true
         });
-        if (!userAdjustedZoomDuringFollow && Math.abs(map.getZoom() - FOLLOW_ZOOM) > 0.4) {
-          // Omedelbar (ej animerad) zoom här, med en flagga som bara är
-          // sann under detta EXAKTA, synkrona anrop — annars kunde en
-          // riktig användarzoom som råkade ske samtidigt som vår egen
-          // (l\u00e4ngre, animerade) korrigering av misstag tolkas som "inte
-          // anv\u00e4ndaren", och zoomen tvingades tillbaka igen efter en stund.
-          programmaticZoomCorrection = true;
-          map.setZoom(FOLLOW_ZOOM, { animate: false });
-          programmaticZoomCorrection = false;
-        }
       }
     } else {
       const marker = L.marker([lat, lon], { icon: makeDivIcon(tripInfo, isMoving) }).addTo(map);
