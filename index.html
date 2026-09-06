@@ -101,7 +101,7 @@
     gap: 0.9rem;
     flex-shrink: 0;
   }
-  #contact-btn {
+  #contact-btn, #planner-btn {
     flex-shrink: 0;
     padding: 0.4rem 0.9rem;
     border: 1px solid var(--line);
@@ -111,7 +111,7 @@
     font-size: 0.8rem;
     white-space: nowrap;
   }
-  #contact-btn:hover {
+  #contact-btn:hover, #planner-btn:hover {
     border-color: var(--muted);
   }
   #menu-btn {
@@ -269,6 +269,76 @@
     border-color: var(--accent);
     background: #222;
   }
+  #search-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: var(--fg);
+    padding: 0.4rem 0.55rem;
+    cursor: pointer;
+  }
+  #search-btn:hover {
+    border-color: var(--muted);
+  }
+  #search-panel {
+    display: none;
+    position: absolute;
+    top: 4.2rem;
+    right: 1.25rem;
+    z-index: 1100;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.6rem;
+    width: 260px;
+    max-width: 85vw;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.55);
+  }
+  #search-panel.open {
+    display: block;
+  }
+  #search-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #1a1a1a;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: var(--fg);
+    padding: 0.45rem 0.6rem;
+    font-size: 0.85rem;
+    font-family: inherit;
+  }
+  #search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  #search-results {
+    max-height: 260px;
+    overflow-y: auto;
+    margin-top: 0.5rem;
+  }
+  .search-result {
+    padding: 0.5rem 0.6rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+  .search-result:hover {
+    background: #1a1a1a;
+  }
+  .search-result b {
+    display: block;
+  }
+  .search-empty {
+    padding: 0.5rem 0.6rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
   #follow-hud {
     display: none;
     position: absolute;
@@ -394,7 +464,7 @@
       justify-content: flex-start;
       overflow-x: auto;
     }
-    #contact-btn {
+    #contact-btn, #planner-btn {
       display: none;
     }
     #menu-btn {
@@ -421,6 +491,10 @@
       <span>Denna månad: <strong id="visitors-month">–</strong></span>
     </div>
     <div class="header-right">
+      <button id="search-btn" aria-label="Sök buss/tåg">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      </button>
+      <a href="https://www.skanetrafiken.se/" id="planner-btn" target="_blank" rel="noopener">Reseplanerare</a>
       <a href="contact.html" id="contact-btn">Kontakt</a>
       <div id="status"><span class="dot"></span>ansluter…</div>
       <button id="menu-btn" aria-label="Meny" aria-expanded="false">
@@ -428,11 +502,16 @@
       </button>
     </div>
     <div id="mobile-menu">
+      <a href="https://www.skanetrafiken.se/" target="_blank" rel="noopener">Reseplanerare</a>
       <a href="contact.html">Kontakt</a>
     </div>
   </header>
   <div style="position: relative; height: 100%;">
     <div id="map"></div>
+    <div id="search-panel">
+      <input id="search-input" type="text" placeholder="Linjenummer, t.ex. 5" autocomplete="off">
+      <div id="search-results"></div>
+    </div>
     <div id="follow-hud">
       <div class="follow-hud-inner">
         <div id="follow-hud-text"></div>
@@ -506,6 +585,67 @@ document.addEventListener("click", (e) => {
     menuBtn.setAttribute("aria-expanded", "false");
   }
 });
+
+// ============================================================
+// Sök buss/tåg efter linjenummer
+// ============================================================
+const searchBtn = document.getElementById("search-btn");
+const searchPanel = document.getElementById("search-panel");
+const searchInput = document.getElementById("search-input");
+const searchResultsEl = document.getElementById("search-results");
+
+searchBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const isOpen = searchPanel.classList.toggle("open");
+  if (isOpen) {
+    searchInput.value = "";
+    searchResultsEl.innerHTML = "";
+    searchInput.focus();
+  }
+});
+document.addEventListener("click", (e) => {
+  if (!searchPanel.contains(e.target) && e.target !== searchBtn) {
+    searchPanel.classList.remove("open");
+  }
+});
+
+function renderSearchResults(query) {
+  const q = query.trim().toLowerCase();
+  searchResultsEl.innerHTML = "";
+  if (!q || !lastEntities) return;
+
+  const matches = [];
+  for (const entity of lastEntities) {
+    const vp = entity.vehicle;
+    if (!vp || !vp.position) continue;
+    const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
+    const tripInfo = tripInfoByTripId.get(tripId);
+    if (!tripInfo || !tripInfo.line) continue;
+    if (tripInfo.line.toLowerCase() !== q) continue;
+    const id = (vp.vehicle && (vp.vehicle.id || vp.vehicle.label)) || entity.id;
+    matches.push({ id, tripInfo });
+  }
+
+  if (matches.length === 0) {
+    searchResultsEl.innerHTML = `<div class="search-empty">Inga aktiva fordon med det linjenumret just nu</div>`;
+    return;
+  }
+
+  for (const { id, tripInfo } of matches) {
+    const div = document.createElement("div");
+    div.className = "search-result";
+    const title = lineLabelFor(tripInfo, tripInfo.line);
+    div.innerHTML = `<b>${title}</b>${tripInfo.destination ? `På väg mot: ${tripInfo.destination}` : ""}`;
+    div.addEventListener("click", () => {
+      window.startFollow(id);
+      searchPanel.classList.remove("open");
+    });
+    searchResultsEl.appendChild(div);
+  }
+}
+
+searchInput.addEventListener("input", () => renderSearchResults(searchInput.value));
+
 console.time("⏱ script start → map-objekt skapat");
 const map = L.map("map", {
   center: MAP_CENTER,
@@ -647,20 +787,44 @@ function beginProgrammaticCameraMove(durationMs) {
 
 window.startFollow = function(id) {
   const entry = markers.get(id);
-  if (!entry) return;
+  if (entry) {
+    beginFollowSession(id, entry.marker.getLatLng(), { tripInfo: entry.tripInfo, lastSpeed: entry.lastSpeed });
+    return;
+  }
+  // Fordonet syns inte just nu (t.ex. utanför synfältet eller hittat via
+  // sökningen innan det hunnit få en egen markör) — slå upp det direkt
+  // i den senaste hämtade datan i stället.
+  if (!lastEntities) return;
+  const match = lastEntities.find((e) => {
+    const vp = e.vehicle;
+    if (!vp) return false;
+    const vid = (vp.vehicle && (vp.vehicle.id || vp.vehicle.label)) || e.id;
+    return vid === id;
+  });
+  if (!match || !match.vehicle || !match.vehicle.position) return;
+  const vp = match.vehicle;
+  const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
+  const tripInfo = tripInfoByTripId.get(tripId);
+  beginFollowSession(id, L.latLng(vp.position.latitude, vp.position.longitude), {
+    tripInfo,
+    lastSpeed: vp.position.speed,
+  });
+};
+
+function beginFollowSession(id, latlng, hudData) {
   map.closePopup();
   for (const e of markers.values()) {
     e.pinned = false;
   }
   followedId = id;
-  updateFollowHud(entry);
+  updateFollowHud(hudData);
   followHud.classList.add("visible");
   beginProgrammaticCameraMove(900);
-  map.flyTo(entry.marker.getLatLng(), FOLLOW_ZOOM, {
+  map.flyTo(latlng, FOLLOW_ZOOM, {
     duration: 0.9,
     easeLinearity: 0.35
   });
-};
+}
 
 function stopFollow() {
   if (!followedId) return;
