@@ -226,6 +226,7 @@ async function buildGtfsArtifacts() {
       color: manualColor || officialColor || heuristicColor || fallbackColorForRoute(id),
       textColor: (cols[idx("route_text_color")] || "").trim(),
       shortName,
+      longName,
       routeType,
       brand: isRailRouteType(routeType) ? "pagatag" : null,
       colorSource: manualColor ? "manual" : officialColor ? "official" : heuristicColor ? "heuristic" : "auto",
@@ -339,7 +340,26 @@ async function buildGtfsArtifacts() {
       info.colorSource = "heuristic";
     }
   }
-  console.log(`${oresundstagCount} linjer identifierade som Öresundståg`);
+  console.log(`${oresundstagCount} linjer identifierade som Öresundståg (geografiskt, via en dansk hållplats)`);
+
+  // RESERVLÖSNING: om Skånetrafikens data aldrig listar några danska
+  // hållplatser alls (bara sina egna svenska), skulle den geografiska
+  // igenkänningen ovan ALDRIG kunna slå till. Kolla därför även om
+  // själva LINJENAMNET innehåller "öresundståg" — oberoende signal.
+  let oresundstagByNameCount = 0;
+  for (const [routeId, info] of routesById) {
+    if (info.brand === "oresundstag") continue; // redan identifierad ovan
+    if (!isRailRouteType(info.routeType)) continue;
+    const name = `${info.shortName} ${info.longName || ""}`.toLowerCase();
+    if (!name.includes("öresundståg")) continue;
+    oresundstagByNameCount++;
+    info.brand = "oresundstag";
+    if (info.colorSource === "heuristic" || info.colorSource === "auto") {
+      info.color = "a3a9ad";
+      info.colorSource = "heuristic";
+    }
+  }
+  console.log(`${oresundstagByNameCount} YTTERLIGARE linjer identifierade som Öresundståg (via namnet, reservlösning)`);
 
   // ============================================================
   // Bygg de tre färdiga artefakterna
@@ -367,9 +387,15 @@ async function buildGtfsArtifacts() {
     // alla andra tåglinjer. Om den riktiga spårgeometrin råkar vara
     // bra nog ritas den ut korrekt.
     const shapeIds = shapeIdsByRoute.get(routeId);
+    if (routeInfo.brand === "oresundstag") {
+      console.log(`DIAGNOS Öresundståg-linje "${routeInfo.shortName}" (${routeId}): ${shapeIds ? shapeIds.size : 0} sträcka(or) hittade.`);
+    }
     if (!shapeIds) continue;
     for (const shapeId of shapeIds) {
       const points = shapePointsById.get(shapeId);
+      if (routeInfo.brand === "oresundstag") {
+        console.log(`  - sträcka ${shapeId}: ${points ? points.length : 0} punkter${!points || points.length < 4 ? " -> FILTRERAD BORT (för få punkter)" : " -> godkänd"}`);
+      }
       if (!points || points.length < 4) continue;
       railLines.push({ color: routeInfo.color, points });
     }
