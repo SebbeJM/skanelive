@@ -405,7 +405,35 @@ async function buildGtfsArtifacts() {
   }
   console.log(`DIAGNOS: ${oresundstagTripCount} resor fick brand="oresundstag" i trip_lookup.json (av totalt ${routeIdByTripId.size} resor)`);
 
+// Avstånd (meter) från en punkt till NÄRMASTE punkt på en sträcka —
+// används ENDAST för diagnostik denna gång (ingen automatisk
+// filtrering), för att identifiera exakt vilken specifik sträcka som
+// inte passerar Kastrup som en riktig mellanhållplats.
+function minDistanceToPointMeters(points, target) {
+  const [tLat, tLon] = target;
+  const latRef = tLat;
+  const cosLat = Math.cos((latRef * Math.PI) / 180);
+  const mPerDegLat = 111320;
+  const tx = tLon * cosLat * mPerDegLat, ty = tLat * mPerDegLat;
+  let min = Infinity;
+  for (const [lat, lon] of points) {
+    const x = lon * cosLat * mPerDegLat, y = lat * mPerDegLat;
+    const d = Math.hypot(x - tx, y - ty);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
   const railLines = [];
+  // Kastrups riktiga koordinater, bara för diagnostiken nedan.
+  let kastrupCoords = null;
+  for (const s of stopsById.values()) {
+    if (s.name && s.name.toLowerCase().includes("kastrup")) {
+      kastrupCoords = [s.lat, s.lon];
+      break;
+    }
+  }
+  console.log(`Kastrup-koordinater (diagnostik): ${kastrupCoords ? kastrupCoords.join(", ") : "HITTADES INTE"}`);
   for (const [routeId, routeInfo] of routesById) {
     if (!isRailRouteType(routeInfo.routeType)) continue;
     const shapeIds = shapeIdsByRoute.get(routeId);
@@ -413,6 +441,15 @@ async function buildGtfsArtifacts() {
     for (const shapeId of shapeIds) {
       const points = shapePointsById.get(shapeId);
       if (!points || points.length < 4) continue;
+      // REN DIAGNOSTIK (tar inte bort något automatiskt denna gång) —
+      // visar exakt hur nära varje Öresundståg-sträcka faktiskt kommer
+      // Kastrups riktiga koordinater, så vi kan identifiera precis
+      // vilken sträcka som INTE passerar där som en riktig mellan-
+      // hållplats (i stället för att bygga ett nytt automatiskt filter).
+      if (routeInfo.brand === "oresundstag" && kastrupCoords) {
+        const dist = minDistanceToPointMeters(points, kastrupCoords);
+        console.log(`DIAGNOS Öresundståg-sträcka ${shapeId} (linje "${routeInfo.shortName}"): ${points.length} punkter, avstånd till Kastrup: ${dist.toFixed(0)}m`);
+      }
       railLines.push({ color: routeInfo.color, points });
     }
   }
