@@ -425,15 +425,27 @@ function minDistanceToPointMeters(points, target) {
 }
 
   const railLines = [];
-  // Kastrups riktiga koordinater, bara för diagnostiken nedan.
+  // Kastrups riktiga koordinater, bara för diagnostiken nedan. Söker på
+  // flera möjliga namnvarianter eftersom GTFS-datan kanske inte
+  // använder exakt "Kastrup" (t.ex. danska "Lufthavnen"/"Airport").
   let kastrupCoords = null;
+  const kastrupNameHints = ["kastrup", "lufthavn", "airport", "cph"];
   for (const s of stopsById.values()) {
-    if (s.name && s.name.toLowerCase().includes("kastrup")) {
+    if (!s.name) continue;
+    const lower = s.name.toLowerCase();
+    if (kastrupNameHints.some((hint) => lower.includes(hint))) {
       kastrupCoords = [s.lat, s.lon];
+      console.log(`Kastrup-koordinater (diagnostik): hittade "${s.name}" -> ${s.lat}, ${s.lon}`);
       break;
     }
   }
-  console.log(`Kastrup-koordinater (diagnostik): ${kastrupCoords ? kastrupCoords.join(", ") : "HITTADES INTE"}`);
+  if (!kastrupCoords) {
+    console.log("Kastrup-koordinater (diagnostik): HITTADES INTE ens med bredare sökning.");
+    console.log("Alla danska hållplatsnamn (lon < 12.65) i datan, för felsökning:");
+    for (const s of stopsById.values()) {
+      if (s.name && s.lon < 12.65) console.log(`  - "${s.name}" (${s.lat}, ${s.lon})`);
+    }
+  }
   for (const [routeId, routeInfo] of routesById) {
     if (!isRailRouteType(routeInfo.routeType)) continue;
     const shapeIds = shapeIdsByRoute.get(routeId);
