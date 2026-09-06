@@ -269,6 +269,20 @@
     border-color: var(--accent);
     background: #222;
   }
+  #zoom-info {
+    position: absolute;
+    z-index: 900;
+    bottom: 8px;
+    left: 10px;
+    max-width: 260px;
+    background: rgba(13, 13, 13, 0.75);
+    color: var(--muted);
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    line-height: 1.3;
+    pointer-events: none;
+  }
   #follow-hud {
     display: none;
     position: absolute;
@@ -433,6 +447,7 @@
   </header>
   <div style="position: relative; height: 100%;">
     <div id="map"></div>
+    <div id="zoom-info">Vid in-/utzoomning kan fordonens position ta upp till 7 sekunder att uppdatera sig.</div>
     <div id="follow-hud">
       <div class="follow-hud-inner">
         <div id="follow-hud-text"></div>
@@ -620,6 +635,11 @@ let programmaticCameraMove = false;
 // att zoomningen faktiskt "håller i sig" i stället för att kännas
 // meningslös. Nollställs varje gång en NY följning påbörjas.
 let userAdjustedZoomDuringFollow = false;
+// Sann ENDAST under det exakta, synkrona map.setZoom(FOLLOW_ZOOM,...)-
+// anropet ovan — mycket snävare än programmaticCameraMove, så en
+// riktig användarzoom aldrig kan missas bara för att den råkar ske
+// nära i tiden.
+let programmaticZoomCorrection = false;
 let programmaticMoveResetTimer = null;
 
 function beginProgrammaticCameraMove(durationMs) {
@@ -734,7 +754,7 @@ map.on("click", stopFollow);
 // map.setZoom(FOLLOW_ZOOM, ...)-anrop under följning) — se
 // userAdjustedZoomDuringFollow ovan.
 map.on("zoomend", () => {
-  if (followedId && !programmaticCameraMove) {
+  if (followedId && !programmaticZoomCorrection) {
     userAdjustedZoomDuringFollow = true;
     // Centrera direkt tillbaka på den följda ikonen, oavsett var musen
     // stod när man scrollade — annars zoomar Leaflet som standard mot
@@ -924,7 +944,14 @@ function updateVehicles(entities) {
           noMoveStart: true
         });
         if (!userAdjustedZoomDuringFollow && Math.abs(map.getZoom() - FOLLOW_ZOOM) > 0.4) {
-          map.setZoom(FOLLOW_ZOOM, { animate: true });
+          // Omedelbar (ej animerad) zoom här, med en flagga som bara är
+          // sann under detta EXAKTA, synkrona anrop — annars kunde en
+          // riktig användarzoom som råkade ske samtidigt som vår egen
+          // (l\u00e4ngre, animerade) korrigering av misstag tolkas som "inte
+          // anv\u00e4ndaren", och zoomen tvingades tillbaka igen efter en stund.
+          programmaticZoomCorrection = true;
+          map.setZoom(FOLLOW_ZOOM, { animate: false });
+          programmaticZoomCorrection = false;
         }
       }
     } else {
