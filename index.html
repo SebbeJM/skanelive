@@ -277,11 +277,14 @@
     max-width: 260px;
     background: rgba(13, 13, 13, 0.75);
     color: var(--muted);
-    padding: 0.3rem 0.6rem;
+    padding: 0.4rem 0.7rem;
     border-radius: 4px;
-    font-size: 0.68rem;
-    line-height: 1.3;
+    font-size: 0.78rem;
+    line-height: 1.35;
     pointer-events: none;
+  }
+  #zoom-info b {
+    color: var(--fg);
   }
   #follow-hud {
     display: none;
@@ -447,7 +450,7 @@
   </header>
   <div style="position: relative; height: 100%;">
     <div id="map"></div>
-    <div id="zoom-info">Vid in-/utzoomning kan fordonens position ta upp till 7 sekunder att uppdatera sig.</div>
+    <div id="zoom-info"><b>Tänk på!</b> Vid in-/utzoomning kan fordonens position ta upp till 7 sekunder att uppdatera sig.</div>
     <div id="follow-hud">
       <div class="follow-hud-inner">
         <div id="follow-hud-text"></div>
@@ -563,18 +566,33 @@ function disableMarkerTransitions() {
     if (el) el.style.transitionProperty = "none";
   }
 }
+// Vid många snabba dragningar i rad hann updateVehicles() (som gör en
+// full genomgång av ALLA fordon, inte bara de synliga) köa upp sig
+// snabbare än webbläsaren hann rita klart — precis det som fick sidan
+// att kännas frusen. Väntar nu 250ms efter senaste rörelsen innan den
+// tunga genomgången faktiskt körs, så den bara händer EN gång efter
+// att man verkligen slutat panorera, oavsett hur många moveend-
+// händelser som hann avfyras under tiden.
+let renderVisibleVehiclesTimer = null;
+function scheduleRenderVisibleVehicles() {
+  clearTimeout(renderVisibleVehiclesTimer);
+  renderVisibleVehiclesTimer = setTimeout(() => {
+    if (lastEntities && !followedId) updateVehicles(lastEntities);
+  }, 250);
+}
+
 function enableMarkerTransitions() {
   mapContainer.classList.remove("map-moving");
   for (const entry of markers.values()) {
     const el = entry.marker.getElement();
     if (el) el.style.transitionProperty = "transform";
   }
-  // Rita in fordon som just blivit synliga (panorering/zoom) direkt, i
-  // stället för att vänta upp till 7 sekunder på nästa hämtning. INTE
-  // om vi följer en resa just nu — updateVehicles() anropar då panTo()
-  // igen, vilket skulle trigga en ny moveend och skapa en oändlig loop
-  // som fastnar hela kameran.
-  if (lastEntities && !followedId) updateVehicles(lastEntities);
+  // Rita in fordon som just blivit synliga (panorering/zoom), i stället
+  // för att vänta upp till 7 sekunder på nästa hämtning. INTE om vi
+  // följer en resa just nu — updateVehicles() anropar då panTo() igen,
+  // vilket skulle trigga en ny moveend och skapa en oändlig loop som
+  // fastnar hela kameran.
+  scheduleRenderVisibleVehicles();
 }
 // Bara ZOOM behöver frysa glidningen — då räknas varje ikons pixel-
 // position om (skalan ändras), vilket annars gav den gamla "flyger
@@ -855,11 +873,15 @@ function makeDivIcon(tripInfo, moving) {
 // Marginalen (50 %) gör att fordon strax utanför skärmkanten ändå
 // redan finns där, så inget dyker upp abrupt exakt vid kanten.
 const RENDER_BOUNDS_PADDING = 0.5;
-function isWithinRenderBounds(lat, lon) {
-  return map.getBounds().pad(RENDER_BOUNDS_PADDING).contains([lat, lon]);
+function isWithinRenderBounds(bounds, lat, lon) {
+  return bounds.contains([lat, lon]);
 }
 
 function updateVehicles(entities) {
+  // Räkna ut kartans synliga gränser EN gång per genomgång, inte en
+  // gång per fordon — sparar en hel del arbete när det finns hundratals
+  // fordon i datan.
+  const renderBounds = map.getBounds().pad(RENDER_BOUNDS_PADDING);
   const seenIds = new Set();
   for (const entity of entities) {
     const vp = entity.vehicle;
@@ -874,7 +896,7 @@ function updateVehicles(entities) {
     // ett fordon tas bort och sedan skapas HELT FRÄSCH (utan någon
     // startposition att glida ifrån) så fort dragningen avslutades,
     // vilket gav en "stannar-flyger-pausar"-känsla.
-    if (id !== followedId && !isWithinRenderBounds(lat, lon)) {
+    if (id !== followedId && !isWithinRenderBounds(renderBounds, lat, lon)) {
       if (!isDragging && markers.has(id)) {
         const entry = markers.get(id);
         map.removeLayer(entry.marker);
