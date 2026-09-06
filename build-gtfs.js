@@ -361,6 +361,30 @@ async function buildGtfsArtifacts() {
   }
   console.log(`${oresundstagByNameCount} YTTERLIGARE linjer identifierade som Öresundståg (via namnet, reservlösning)`);
 
+  // TREDJE RESERVLÖSNING: samma nominella linjenummer (t.ex. "802") kan
+  // ibland vara uppdelat på FLERA olika route_id i källdatan (t.ex. en
+  // variant för den svenska biten av resan, en annan för den
+  // gränsöverskridande biten) — bara den del som råkar ha en dansk
+  // hållplats i just sin egen route_id fångas annars, medan resor som
+  // använder en ANNAN route_id för samma linjenummer missas helt. Se
+  // till att alla delar av samma linjenummer får samma märkning.
+  const oresundstagShortNames = new Set();
+  for (const info of routesById.values()) {
+    if (info.brand === "oresundstag") oresundstagShortNames.add(info.shortName);
+  }
+  let oresundstagBySameNameCount = 0;
+  for (const info of routesById.values()) {
+    if (info.brand === "oresundstag") continue;
+    if (!oresundstagShortNames.has(info.shortName)) continue;
+    oresundstagBySameNameCount++;
+    info.brand = "oresundstag";
+    if (info.colorSource === "heuristic" || info.colorSource === "auto") {
+      info.color = "a3a9ad";
+      info.colorSource = "heuristic";
+    }
+  }
+  console.log(`${oresundstagBySameNameCount} YTTERLIGARE linjer identifierade som Öresundståg (samma linjenummer som en redan identifierad route_id)`);
+
   // ============================================================
   // Bygg de tre färdiga artefakterna
   // ============================================================
@@ -384,14 +408,6 @@ async function buildGtfsArtifacts() {
   const railLines = [];
   for (const [routeId, routeInfo] of routesById) {
     if (!isRailRouteType(routeInfo.routeType)) continue;
-    // Öresundståg utesluts helt — spårgeometrin för den gränsöverskridande
-    // sträckan är för lågupplöst/felaktig i källdatan (en spikrak linje
-    // rakt över Öresund i stället för att följa bron/tunneln), och vi har
-    // provat flera olika geometriska filter (krokighet, avstånd till
-    // Kastrup) utan att lyckas skilja ut bara den felaktiga sträckan utan
-    // att också skada legitim data på andra linjer. Fordonens FÄRG
-    // påverkas inte av detta, bara linjen som ritas på kartan.
-    if (routeInfo.brand === "oresundstag") continue;
     const shapeIds = shapeIdsByRoute.get(routeId);
     if (!shapeIds) continue;
     for (const shapeId of shapeIds) {
