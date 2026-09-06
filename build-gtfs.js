@@ -186,6 +186,38 @@ function simplifyPoints(points, toleranceMeters) {
   return simplifySegment(points, toleranceMeters);
 }
 
+// Avgör om en linje faktiskt kröker sig meningsfullt, eller om den bara
+// är en (nästan) rak sträcka mellan start och slut — oavsett hur många
+// punkter den råkar ha. Vissa lågkvalitativa spårdata-sträckor (t.ex.
+// den gränsöverskridande Öresundståg-sträckan) kan ha fler än 4 punkter
+// men ändå bara vara en nästan perfekt rak linje, vilket det gamla
+// "minst 4 punkter"-filtret inte fångade.
+function isMeaninglyCurved(points, minDeviationMeters) {
+  if (points.length < 3) return false;
+  function perpendicularDistanceMeters(p, a, b) {
+    const latRef = (a[0] + b[0]) / 2;
+    const cosLat = Math.cos((latRef * Math.PI) / 180);
+    const mPerDegLat = 111320;
+    const ax = a[1] * cosLat * mPerDegLat, ay = a[0] * mPerDegLat;
+    const bx = b[1] * cosLat * mPerDegLat, by = b[0] * mPerDegLat;
+    const px = p[1] * cosLat * mPerDegLat, py = p[0] * mPerDegLat;
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+    const t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    const projX = ax + Math.max(0, Math.min(1, t)) * dx;
+    const projY = ay + Math.max(0, Math.min(1, t)) * dy;
+    return Math.hypot(px - projX, py - projY);
+  }
+  const a = points[0], b = points[points.length - 1];
+  let maxDist = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const d = perpendicularDistanceMeters(points[i], a, b);
+    if (d > maxDist) maxDist = d;
+  }
+  return maxDist >= minDeviationMeters;
+}
+
 function forEachCsvRow(text, callback) {
   const lines = text.split("\n");
   if (lines.length === 0) return;
@@ -393,10 +425,16 @@ async function buildGtfsArtifacts() {
     if (!shapeIds) continue;
     for (const shapeId of shapeIds) {
       const points = shapePointsById.get(shapeId);
+      const curved = points && isMeaninglyCurved(points, 100);
       if (routeInfo.brand === "oresundstag") {
-        console.log(`  - sträcka ${shapeId}: ${points ? points.length : 0} punkter${!points || points.length < 4 ? " -> FILTRERAD BORT (för få punkter)" : " -> godkänd"}`);
+        const reason = !points || points.length < 4
+          ? "för få punkter"
+          : !curved
+            ? "för rak (avviker inte tillräckligt från en rät linje)"
+            : null;
+        console.log(`  - sträcka ${shapeId}: ${points ? points.length : 0} punkter${reason ? ` -> FILTRERAD BORT (${reason})` : " -> godkänd"}`);
       }
-      if (!points || points.length < 4) continue;
+      if (!points || points.length < 4 || !curved) continue;
       railLines.push({ color: routeInfo.color, points });
     }
   }
