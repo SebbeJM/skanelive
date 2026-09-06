@@ -186,38 +186,6 @@ function simplifyPoints(points, toleranceMeters) {
   return simplifySegment(points, toleranceMeters);
 }
 
-// Avgör om en linje faktiskt kröker sig meningsfullt, eller om den bara
-// är en (nästan) rak sträcka mellan start och slut — oavsett hur många
-// punkter den råkar ha. Vissa lågkvalitativa spårdata-sträckor (t.ex.
-// den gränsöverskridande Öresundståg-sträckan) kan ha fler än 4 punkter
-// men ändå bara vara en nästan perfekt rak linje, vilket det gamla
-// "minst 4 punkter"-filtret inte fångade.
-function maxDeviationMeters(points) {
-  if (points.length < 3) return 0;
-  function perpendicularDistanceMeters(p, a, b) {
-    const latRef = (a[0] + b[0]) / 2;
-    const cosLat = Math.cos((latRef * Math.PI) / 180);
-    const mPerDegLat = 111320;
-    const ax = a[1] * cosLat * mPerDegLat, ay = a[0] * mPerDegLat;
-    const bx = b[1] * cosLat * mPerDegLat, by = b[0] * mPerDegLat;
-    const px = p[1] * cosLat * mPerDegLat, py = p[0] * mPerDegLat;
-    const dx = bx - ax, dy = by - ay;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return Math.hypot(px - ax, py - ay);
-    const t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
-    const projX = ax + Math.max(0, Math.min(1, t)) * dx;
-    const projY = ay + Math.max(0, Math.min(1, t)) * dy;
-    return Math.hypot(px - projX, py - projY);
-  }
-  const a = points[0], b = points[points.length - 1];
-  let maxDist = 0;
-  for (let i = 1; i < points.length - 1; i++) {
-    const d = perpendicularDistanceMeters(points[i], a, b);
-    if (d > maxDist) maxDist = d;
-  }
-  return maxDist;
-}
-
 function forEachCsvRow(text, callback) {
   const lines = text.split("\n");
   if (lines.length === 0) return;
@@ -397,9 +365,11 @@ async function buildGtfsArtifacts() {
   // Bygg de tre färdiga artefakterna
   // ============================================================
   const tripLookup = {};
+  let oresundstagTripCount = 0;
   for (const [tripId, routeId] of routeIdByTripId) {
     const info = routesById.get(routeId);
     if (!info) continue;
+    if (info.brand === "oresundstag") oresundstagTripCount++;
     tripLookup[tripId] = {
       line: info.shortName,
       color: info.color,
@@ -409,34 +379,24 @@ async function buildGtfsArtifacts() {
       destination: headsignByTripId.get(tripId) || "",
     };
   }
+  console.log(`DIAGNOS: ${oresundstagTripCount} resor fick brand="oresundstag" i trip_lookup.json (av totalt ${routeIdByTripId.size} resor)`);
 
   const railLines = [];
   for (const [routeId, routeInfo] of routesById) {
     if (!isRailRouteType(routeInfo.routeType)) continue;
-    // OBS: Öresundståg utesluts INTE längre helt bara för att det är
-    // Öresundståg — kvalitetsfiltret nedan (minst 4 punkter per
-    // sträcka) avgör i stället från fall till fall, precis som för
-    // alla andra tåglinjer. Om den riktiga spårgeometrin råkar vara
-    // bra nog ritas den ut korrekt.
+    // Öresundståg utesluts helt — spårgeometrin för den gränsöverskridande
+    // sträckan är för lågupplöst/felaktig i källdatan (en spikrak linje
+    // rakt över Öresund i stället för att följa bron/tunneln), och vi har
+    // provat flera olika geometriska filter (krokighet, avstånd till
+    // Kastrup) utan att lyckas skilja ut bara den felaktiga sträckan utan
+    // att också skada legitim data på andra linjer. Fordonens FÄRG
+    // påverkas inte av detta, bara linjen som ritas på kartan.
+    if (routeInfo.brand === "oresundstag") continue;
     const shapeIds = shapeIdsByRoute.get(routeId);
-    if (routeInfo.brand === "oresundstag") {
-      console.log(`DIAGNOS Öresundståg-linje "${routeInfo.shortName}" (${routeId}): ${shapeIds ? shapeIds.size : 0} sträcka(or) hittade.`);
-    }
     if (!shapeIds) continue;
     for (const shapeId of shapeIds) {
       const points = shapePointsById.get(shapeId);
-      const deviation = points ? maxDeviationMeters(points) : 0;
-      const curved = deviation >= 1000;
-      // Diagnostik för ALLA tåglinjer nu, inte bara Öresundståg — så vi
-      // kan hitta exakt vilken linje/sträcka en eventuell kvarvarande
-      // spikrak felaktig sträcka hör till.
-      const reason = !points || points.length < 4
-        ? "för få punkter"
-        : !curved
-          ? `för rak (avvek bara ${deviation.toFixed(0)}m från en rät linje, kräver 1000m)`
-          : null;
-      console.log(`DIAGNOS linje "${routeInfo.shortName}" (${routeId}), sträcka ${shapeId}: ${points ? points.length : 0} punkter, avvikelse ${deviation.toFixed(0)}m${reason ? ` -> FILTRERAD BORT (${reason})` : " -> godkänd"}`);
-      if (!points || points.length < 4 || !curved) continue;
+      if (!points || points.length < 4) continue;
       railLines.push({ color: routeInfo.color, points });
     }
   }
