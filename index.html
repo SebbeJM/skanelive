@@ -731,10 +731,18 @@ map.on("dragend", () => { isDragging = false; });
 // klick som händer mitt i animationen — vilket var exakt varför
 // avbryt-klicket inte alltid fungerade.
 map.on("click", stopFollow);
-// Zoom avbryter följningen precis som dragning gör (samma anledning:
-// ett klick/en dragning representerar alltid en äkta användarhandling,
-// aldrig vår egen kod).
-map.on("zoomstart", stopFollow);
+// Zoom är ANNORLUNDA än klick/dragning — vår egen inledande flyTo-
+// animation (när man trycker "Följ resan") ZOOMAR också, inte bara
+// panorerar, vilket avfyrar en riktig zoomstart-händelse. Om den
+// alltid avbröt följningen direkt skulle vår egen animation avbryta
+// sig själv precis när den startar. Går därför via
+// programmaticCameraMove-flaggan (sann bara under VÅRA EGNA
+// kamerarörelser) — riktig användarzoom avbryter fortfarande direkt.
+function stopFollowIfUserInitiated() {
+  if (programmaticCameraMove) return;
+  stopFollow();
+}
+map.on("zoomstart", stopFollowIfUserInitiated);
 
 const statusEl = document.getElementById("status");
 function setStatus(state, text) {
