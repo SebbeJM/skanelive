@@ -361,7 +361,11 @@ async function buildGtfsArtifacts() {
   const railLines = [];
   for (const [routeId, routeInfo] of routesById) {
     if (!isRailRouteType(routeInfo.routeType)) continue;
-    if (routeInfo.brand === "oresundstag") continue;
+    // OBS: Öresundståg utesluts INTE längre helt bara för att det är
+    // Öresundståg — kvalitetsfiltret nedan (minst 4 punkter per
+    // sträcka) avgör i stället från fall till fall, precis som för
+    // alla andra tåglinjer. Om den riktiga spårgeometrin råkar vara
+    // bra nog ritas den ut korrekt.
     const shapeIds = shapeIdsByRoute.get(routeId);
     if (!shapeIds) continue;
     for (const shapeId of shapeIds) {
