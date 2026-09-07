@@ -1187,7 +1187,12 @@ function renderVisibleBusStops() {
 let renderBusStopsTimer = null;
 function scheduleRenderVisibleBusStops() {
   clearTimeout(renderBusStopsTimer);
-  renderBusStopsTimer = setTimeout(renderVisibleBusStops, 250);
+  // Medvetet ett ANNAT värde än fordons-uppdateringens 250ms — annars
+  // hamnar båda på exakt samma tidpunkt och kör tungt arbete (loopar
+  // igenom tusentals hållplatser respektive fordon) samtidigt, vilket
+  // kan blockera skärmen från att reagera på beröring en kort stund
+  // efter en pinch-zoom på mobilen.
+  renderBusStopsTimer = setTimeout(renderVisibleBusStops, 550);
 }
 map.on("moveend", scheduleRenderVisibleBusStops);
 map.on("zoomend", scheduleRenderVisibleBusStops);
