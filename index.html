@@ -208,6 +208,11 @@
     text-overflow: clip;
   }
   .vehicle-icon.unknown { background: var(--accent-dim); }
+  /* Vit kantlinje runt tåg-ikoner (Pågatåg/Öresundståg) — de syns annars
+     dåligt mot den mörka kartan, särskilt de silverfärgade. */
+  .vehicle-marker.rail .vehicle-icon {
+    border: 2px solid #ffffff;
+  }
   .vehicle-icon .label {
     text-shadow:
       -1px -1px 0 #000,
@@ -538,7 +543,7 @@ const TRIP_LOOKUP_URL = "data/trip_lookup.json";
 const RAIL_LINES_URL = "data/rail_lines.json";
 const TRAIN_STATIONS_URL = "data/train_stations.json";
 const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
-const POLL_INTERVAL_MS = 3000; // 3 sekunder — tillfällig kompromiss innan Silver-nyckeln godkänts
+const POLL_INTERVAL_MS = 2000; // 2 sekunder — Silver-nyckel godkänd
 const MAP_CENTER = [55.605, 12.9998];
 const MAP_ZOOM = 10.5;
 const GTFS_RT_PROTO = `
