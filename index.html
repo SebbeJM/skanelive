@@ -237,9 +237,8 @@
   .bus-stop-marker {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    pointer-events: none;
-    white-space: nowrap;
+    justify-content: center;
+    cursor: pointer;
   }
   .bus-stop-icon {
     flex-shrink: 0;
@@ -253,16 +252,6 @@
     border: 2px solid #3b82f6;
     box-shadow: 0 1px 3px rgba(0,0,0,0.6);
     color: #3b82f6;
-  }
-  .bus-stop-label {
-    color: #ffffff;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-shadow:
-      -1px -1px 0 #000,
-       1px -1px 0 #000,
-      -1px  1px 0 #000,
-       1px  1px 0 #000;
   }
   .leaflet-popup-content-wrapper {
     border-radius: 4px;
@@ -872,7 +861,7 @@ const lineHudText = document.getElementById("line-hud-text");
 const lineHudClose = document.getElementById("line-hud-close");
 const followedLineLayer = L.layerGroup().addTo(map);
 let routeShapesCache = null;
-let currentLineName = null;
+let currentRouteId = null;
 
 async function ensureRouteShapesLoaded() {
   if (routeShapesCache) return routeShapesCache;
@@ -885,7 +874,7 @@ async function ensureRouteShapesLoaded() {
 
 function hideLine() {
   followedLineLayer.clearLayers();
-  currentLineName = null;
+  currentRouteId = null;
   lineHud.classList.remove("visible");
   followLineBtn.classList.remove("active");
   followLineBtn.textContent = "Se linje";
@@ -901,13 +890,13 @@ async function showLineForRoute(tripInfo) {
     console.warn("Kunde inte ladda ruttdata:", err);
     return;
   }
-  const route = routes[displayName];
+  const route = routes[tripInfo.routeId];
   followedLineLayer.clearLayers();
   if (!route) {
     lineHudText.innerHTML = `<b>Ingen ruttdata för ${lineLabelFor(tripInfo, displayName)}</b>`;
     lineHud.classList.add("visible");
-    currentLineName = null;
-    setTimeout(() => { if (!currentLineName) lineHud.classList.remove("visible"); }, 2200);
+    currentRouteId = null;
+    setTimeout(() => { if (!currentRouteId) lineHud.classList.remove("visible"); }, 2200);
     return;
   }
   // Linjens egen färg (samma som ikonen), inte en fast färg.
@@ -928,7 +917,7 @@ async function showLineForRoute(tripInfo) {
       .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -6] })
       .addTo(followedLineLayer);
   }
-  currentLineName = displayName;
+  currentRouteId = tripInfo.routeId;
   lineHudText.innerHTML = `<b>Visar linje: ${lineLabelFor(tripInfo, displayName)}</b>`;
   lineHud.classList.add("visible");
   if (followedTripInfo && followedTripInfo.line === displayName) {
@@ -964,7 +953,7 @@ lineHudClose.addEventListener("click", (e) => {
 
 followLineBtn.addEventListener("click", (e) => {
   e.stopPropagation();
-  if (currentLineName && followedTripInfo && currentLineName === followedTripInfo.line) {
+  if (currentRouteId && followedTripInfo && currentRouteId === followedTripInfo.routeId) {
     hideLine();
   } else {
     showLineForRoute(followedTripInfo);
@@ -1062,7 +1051,7 @@ function stopFollow() {
   // Dölj bara linjen om det var DEN följda resans linje som visades —
   // om man t.ex. visade en annan buss linje via dess popup samtidigt
   // ska den inte försvinna bara för att man slutar följa den första.
-  if (currentLineName && followedTripInfo && currentLineName === followedTripInfo.line) {
+  if (currentRouteId && followedTripInfo && currentRouteId === followedTripInfo.routeId) {
     hideLine();
   }
   followedTripInfo = null;
@@ -1172,14 +1161,11 @@ const BUS_STOP_ICON_SVG = `
   </svg>
 `;
 
-function busStopIcon(name) {
+function busStopIcon() {
   return L.divIcon({
     className: "bus-stop-marker",
-    html: `
-      <div class="bus-stop-icon">${BUS_STOP_ICON_SVG}</div>
-      <span class="bus-stop-label">${name}</span>
-    `,
-    iconSize: null,
+    html: `<div class="bus-stop-icon">${BUS_STOP_ICON_SVG}</div>`,
+    iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
 }
@@ -1191,7 +1177,10 @@ function renderVisibleBusStops() {
   const bounds = map.getBounds().pad(0.2);
   for (const s of allBusStops) {
     if (!bounds.contains([s.lat, s.lon])) continue;
-    L.marker([s.lat, s.lon], { icon: busStopIcon(s.name) }).addTo(busStopsLayer);
+    L.marker([s.lat, s.lon], { icon: busStopIcon() })
+      .bindTooltip(s.name, { direction: "top", offset: [0, -10] })
+      .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -10] })
+      .addTo(busStopsLayer);
   }
 }
 
@@ -1387,6 +1376,13 @@ function updateVehicles(entities) {
         L.DomEvent.stopPropagation(e);
         if (followedId === id) return;
         newEntry.pinned = !newEntry.pinned;
+        // Om man markerar en ny ikon, dölj en eventuellt visad linje
+        // (som annars kunde bli kvar och kännas ur sync med det man
+        // faktiskt tittar på nu) — bara en enkel knapptryckning bort
+        // att visa igen om man vill.
+        if (newEntry.pinned && currentRouteId) {
+          hideLine();
+        }
         popup.setContent(renderPopupHtml(newEntry.popupBaseHtml, newEntry.pinned, id));
         if (newEntry.pinned) {
           popup.setLatLng(marker.getLatLng());
