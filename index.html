@@ -2,7 +2,7 @@
 <html lang="sv">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Skåne Live – realtidskarta över kollektivtrafiken</title>
 <meta name="description" content="Live-data över kollektivtrafiken i Skåne Län — se bussar och tåg röra sig i realtid på kartan.">
 <link rel="canonical" href="https://skånelive.se/">
@@ -36,6 +36,8 @@
   html, body {
     margin: 0;
     height: 100%;
+    height: 100dvh;
+    overflow: hidden;
     background: var(--bg);
     color: var(--fg);
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
