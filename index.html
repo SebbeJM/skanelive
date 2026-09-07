@@ -379,7 +379,7 @@
     margin-bottom: 0.15em;
     font-size: 0.92rem;
   }
-  #follow-hud-close {
+  #follow-hud-close, #follow-hud-line-btn {
     flex-shrink: 0;
     padding: 0.4rem 0.75rem;
     border: 1px solid var(--line);
@@ -392,9 +392,13 @@
     white-space: nowrap;
     transition: border-color 0.15s, background 0.15s;
   }
-  #follow-hud-close:hover {
+  #follow-hud-close:hover, #follow-hud-line-btn:hover {
     border-color: var(--accent);
     background: #222;
+  }
+  #follow-hud-line-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
   }
   #config-banner {
     position: absolute;
@@ -529,6 +533,7 @@
     <div id="follow-hud">
       <div class="follow-hud-inner">
         <div id="follow-hud-text"></div>
+        <button id="follow-hud-line-btn">Se linje</button>
         <button id="follow-hud-close">Sluta följa</button>
       </div>
     </div>
@@ -542,6 +547,8 @@ const PROXY_URL = "https://skanetrafikenlivekarta.sebastianmauritsson.workers.de
 const TRIP_LOOKUP_URL = "data/trip_lookup.json";
 const RAIL_LINES_URL = "data/rail_lines.json";
 const TRAIN_STATIONS_URL = "data/train_stations.json";
+const BUS_STOPS_URL = "data/bus_stops.json";
+const ROUTE_SHAPES_URL = "data/route_shapes.json";
 const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
 const POLL_INTERVAL_MS = 2000; // 2 sekunder — Silver-nyckel godkänd
 const MAP_CENTER = [55.605, 12.9998];
@@ -768,6 +775,9 @@ map.on("click", () => {
 // Följ-resan + HUD
 // ============================================================
 let followedId = null;
+// Håller koll på den följda resans linjeinfo, oberoende av om fordonet
+// just nu har en egen markör — används av "Se linje"-knappen.
+let followedTripInfo = null;
 const FOLLOW_ZOOM = 16;
 const followHud = document.getElementById("follow-hud");
 const followHudText = document.getElementById("follow-hud-text");
@@ -776,6 +786,80 @@ const followHudClose = document.getElementById("follow-hud-close");
 followHudClose.addEventListener("click", (e) => {
   e.stopPropagation();
   stopFollow();
+});
+
+// ============================================================
+// "Se linje" — visar hela ruttens sträckning + hållplatser för den
+// linje man just nu följer, som ett tjockt gult streck. Ruttdatan
+// hämtas bara vid FÖRSTA klicket (lat-laddning), sedan cachas den.
+// ============================================================
+const followLineBtn = document.getElementById("follow-hud-line-btn");
+const followedLineLayer = L.layerGroup().addTo(map);
+let routeShapesCache = null;
+let followedLineVisible = false;
+
+async function ensureRouteShapesLoaded() {
+  if (routeShapesCache) return routeShapesCache;
+  const res = await fetch(ROUTE_SHAPES_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error(`route_shapes.json: HTTP ${res.status}`);
+  const data = await res.json();
+  routeShapesCache = data.routes;
+  return routeShapesCache;
+}
+
+function hideFollowedLine() {
+  followedLineLayer.clearLayers();
+  followedLineVisible = false;
+  followLineBtn.classList.remove("active");
+  followLineBtn.textContent = "Se linje";
+}
+
+async function showFollowedLine() {
+  if (!followedTripInfo || !followedTripInfo.line) return;
+  followLineBtn.textContent = "Laddar…";
+  let routes;
+  try {
+    routes = await ensureRouteShapesLoaded();
+  } catch (err) {
+    console.warn("Kunde inte ladda ruttdata:", err);
+    followLineBtn.textContent = "Se linje";
+    return;
+  }
+  const route = routes[followedTripInfo.line];
+  followedLineLayer.clearLayers();
+  if (!route) {
+    followLineBtn.textContent = "Ingen ruttdata";
+    setTimeout(() => { if (!followedLineVisible) followLineBtn.textContent = "Se linje"; }, 1800);
+    return;
+  }
+  L.polyline(route.points, {
+    color: "#f5c400",
+    weight: 5,
+    opacity: 0.85,
+  }).addTo(followedLineLayer);
+  for (const s of route.stops) {
+    L.circleMarker([s.lat, s.lon], {
+      radius: 5,
+      color: "#0e0e0e",
+      weight: 2,
+      fillColor: "#f5c400",
+      fillOpacity: 1,
+    })
+      .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -6] })
+      .addTo(followedLineLayer);
+  }
+  followedLineVisible = true;
+  followLineBtn.classList.add("active");
+  followLineBtn.textContent = "Dölj linje";
+}
+
+followLineBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (followedLineVisible) {
+    hideFollowedLine();
+  } else {
+    showFollowedLine();
+  }
 });
 
 // FIX: Leaflets interna "_animatingZoom"-flagga hann tydligen inte sättas
@@ -866,6 +950,8 @@ function stopFollow() {
   if (prevEntry) map.closePopup(prevEntry.popup);
   map.closePopup();
 
+  hideFollowedLine();
+  followedTripInfo = null;
   followHud.classList.remove("visible");
   followHudText.innerHTML = "";
 }
@@ -873,6 +959,7 @@ function stopFollow() {
 function updateFollowHud(entry) {
   if (!entry) return;
   const tripInfo = entry.tripInfo;
+  followedTripInfo = tripInfo || null;
   const displayName = (tripInfo && tripInfo.line) || "okänd";
   const destination = (tripInfo && tripInfo.destination) || "";
   const speedText = entry.lastSpeed != null
@@ -946,6 +1033,46 @@ function drawAllRailLines(lines) {
     }).addTo(routeLinesLayer);
   }
 }
+
+// ============================================================
+// Busshållplatser — 10 000+ stycken totalt, så de visas bara vid
+// inzoomning och bara de som faktiskt syns just nu (samma idé som
+// synfälts-filtret för fordon), annars skulle det bli alldeles för
+// många samtidigt uppritade punkter.
+// ============================================================
+let allBusStops = [];
+const BUS_STOP_ZOOM_THRESHOLD = 15;
+const busStopsRenderer = L.canvas({ padding: 0.3 });
+const busStopsLayer = L.layerGroup().addTo(map);
+
+function renderVisibleBusStops() {
+  busStopsLayer.clearLayers();
+  if (map.getZoom() < BUS_STOP_ZOOM_THRESHOLD) return;
+  if (!allBusStops.length) return;
+  const bounds = map.getBounds().pad(0.2);
+  for (const s of allBusStops) {
+    if (!bounds.contains([s.lat, s.lon])) continue;
+    L.circleMarker([s.lat, s.lon], {
+      renderer: busStopsRenderer,
+      radius: 4,
+      color: "#e7ece8",
+      weight: 1,
+      fillColor: "#7d9088",
+      fillOpacity: 0.9,
+    })
+      .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -6] })
+      .addTo(busStopsLayer);
+  }
+}
+
+let renderBusStopsTimer = null;
+function scheduleRenderVisibleBusStops() {
+  clearTimeout(renderBusStopsTimer);
+  renderBusStopsTimer = setTimeout(renderVisibleBusStops, 250);
+}
+map.on("moveend", scheduleRenderVisibleBusStops);
+map.on("zoomend", scheduleRenderVisibleBusStops);
+
 const markers = new Map();
 let staticDataLoaded = false;
 const ZOOM_LABEL_THRESHOLD = 14; // höjt från 12 — kräver mer inzoomning innan linjenummer visas
@@ -1160,17 +1287,20 @@ async function loadProtoSchema() {
 }
 async function loadRouteColors() {
   try {
-    const [tripLookupRes, railLinesRes, stationsRes] = await Promise.all([
+    const [tripLookupRes, railLinesRes, stationsRes, busStopsRes] = await Promise.all([
       fetch(TRIP_LOOKUP_URL, { cache: "no-store" }),
       fetch(RAIL_LINES_URL, { cache: "no-store" }),
       fetch(TRAIN_STATIONS_URL, { cache: "no-store" }),
+      fetch(BUS_STOPS_URL, { cache: "no-store" }),
     ]);
     if (!tripLookupRes.ok) throw new Error(`trip_lookup.json: HTTP ${tripLookupRes.status}`);
     if (!railLinesRes.ok) throw new Error(`rail_lines.json: HTTP ${railLinesRes.status}`);
     if (!stationsRes.ok) throw new Error(`train_stations.json: HTTP ${stationsRes.status}`);
+    if (!busStopsRes.ok) throw new Error(`bus_stops.json: HTTP ${busStopsRes.status}`);
     const tripLookup = await tripLookupRes.json();
     const railLinesData = await railLinesRes.json();
     const stationsData = await stationsRes.json();
+    const busStopsData = await busStopsRes.json();
     for (const [tripId, info] of Object.entries(tripLookup.trips)) {
       tripInfoByTripId.set(tripId, info);
     }
@@ -1178,6 +1308,9 @@ async function loadRouteColors() {
     drawAllRailLines(railLinesData.lines);
     console.log(`Ritade ${railLinesData.lines.length} tåglinjer`);
     drawRealTrainStations(stationsData.stations);
+    allBusStops = busStopsData.stops;
+    console.log(`Laddade ${allBusStops.length} busshållplatser`);
+    renderVisibleBusStops();
   } catch (err) {
     console.warn("Kunde inte ladda den servergenererade linjedatan:", err);
   }
