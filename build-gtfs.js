@@ -408,6 +408,7 @@ async function buildGtfsArtifacts() {
     if (info.brand === "oresundstag") oresundstagTripCount++;
     tripLookup[tripId] = {
       line: info.shortName,
+      routeId,
       color: info.color,
       textColor: info.textColor,
       type: info.routeType,
@@ -516,11 +517,6 @@ function minDistanceToPointMeters(points, target) {
       }
     }
     if (!bestPoints || bestPoints.length < 2) continue;
-    // Flera route_id kan dela samma linjenummer (olika riktningar/
-    // varianter) — behåll den mest detaljerade sträckan oavsett vilket
-    // route_id den råkar komma från.
-    const existing = routeShapes[routeInfo.shortName];
-    if (existing && existing.points.length >= bestPoints.length) continue;
 
     // Hållplatslistan för samma representativa resa som sträckan kom
     // ifrån (via tripIdByShapeId), i rätt ordning.
@@ -535,7 +531,11 @@ function minDistanceToPointMeters(points, target) {
       }
     }
 
-    routeShapes[routeInfo.shortName] = {
+    // Nycklar på det UNIKA route_id, inte det visade linjenumret —
+    // annars kunde helt orelaterade linjer på andra sidan Skåne som
+    // råkar dela samma visade nummer (t.ex. "5") blandas ihop med
+    // varandra. Varje route_id representerar en helt egen, riktig linje.
+    routeShapes[routeId] = {
       color: routeInfo.color,
       points: bestPoints,
       stops,
