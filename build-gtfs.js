@@ -238,6 +238,9 @@ async function buildGtfsArtifacts() {
   const routeIdByTripId = new Map();
   const headsignByTripId = new Map();
   const shapeIdsByRoute = new Map();
+  // Ett exempel-trip_id per shape_id, för att kunna slå upp en
+  // representativ hållplatslista senare (se "Se linje"-datan nedan).
+  const tripIdByShapeId = new Map();
   const tripsText = await extractFileAsText(bytes, centralDir, "trips.txt");
   forEachCsvRow(tripsText, (cols, idx) => {
     const tripId = (cols[idx("trip_id")] || "").trim();
@@ -249,6 +252,7 @@ async function buildGtfsArtifacts() {
     if (routeId && shapeId) {
       if (!shapeIdsByRoute.has(routeId)) shapeIdsByRoute.set(routeId, new Set());
       shapeIdsByRoute.get(routeId).add(shapeId);
+      if (!tripIdByShapeId.has(shapeId)) tripIdByShapeId.set(shapeId, tripId);
     }
   });
   console.log(`trips.txt: ${routeIdByTripId.size} resor`);
@@ -295,6 +299,11 @@ async function buildGtfsArtifacts() {
   const railStopIds = new Set();
   const stopIdsByRoute = new Map();
   const lastStopByTripId = new Map();
+  // Hela hållplatssekvensen per resa (inte bara sista) — bara för de
+  // resor vi faktiskt kan behöva den för ("Se linje"-representanter),
+  // avgörs efter att routeShapes byggts. Sparar allt här och plockar
+  // bara ut det vi behöver senare, enklare än att förutse i förväg.
+  const stopSeqByTripId = new Map();
   const stopTimesText = await extractFileAsText(bytes, centralDir, "stop_times.txt");
   if (stopTimesText) {
     forEachCsvRow(stopTimesText, (cols, idx) => {
@@ -305,6 +314,9 @@ async function buildGtfsArtifacts() {
       const seqNum = Number.isNaN(seq) ? 0 : seq;
       const existing = lastStopByTripId.get(tripId);
       if (!existing || seqNum > existing.seq) lastStopByTripId.set(tripId, { seq: seqNum, stopId });
+
+      if (!stopSeqByTripId.has(tripId)) stopSeqByTripId.set(tripId, []);
+      stopSeqByTripId.get(tripId).push({ seq: seqNum, stopId });
 
       if (!railTripIds.has(tripId)) return;
       railStopIds.add(stopId);
@@ -474,13 +486,77 @@ function minDistanceToPointMeters(points, target) {
     trainStations.push({ name: s.name, lat: s.lat, lon: s.lon });
   }
 
+  // Alla hållplatser (mestadels bussar) — allt utom de vi redan räknat
+  // som tågstationer ovan, så vi inte får dubbletter. Bara namn+position,
+  // ingen extra data, för att hålla filen så liten som möjligt trots
+  // de över 10 000 hållplatserna.
+  const busStops = [];
+  for (const [stopId, s] of stopsById) {
+    if (!s.name) continue;
+    if (railStopIds.has(stopId)) continue;
+    busStops.push({ name: s.name, lat: s.lat, lon: s.lon });
+  }
+
+  // Ruttdata per linje (för "Se linje"-knappen när man följer en resa) —
+  // EN representativ sträcka (den med flest punkter, dvs mest detaljerad)
+  // per linje, plus hela hållplatslistan i ordning för just den sträckan.
+  // Bygger på samma stop_times-genomgång som gjordes för tåg tidigare,
+  // fast nu för ALLA linjer (bussar också).
+  const routeShapes = {};
+  for (const [routeId, routeInfo] of routesById) {
+    const shapeIds = shapeIdsByRoute.get(routeId);
+    if (!shapeIds || shapeIds.size === 0) continue;
+    let bestShapeId = null, bestPoints = null;
+    for (const shapeId of shapeIds) {
+      const points = shapePointsById.get(shapeId);
+      if (!points) continue;
+      if (!bestPoints || points.length > bestPoints.length) {
+        bestShapeId = shapeId;
+        bestPoints = points;
+      }
+    }
+    if (!bestPoints || bestPoints.length < 2) continue;
+    // Flera route_id kan dela samma linjenummer (olika riktningar/
+    // varianter) — behåll den mest detaljerade sträckan oavsett vilket
+    // route_id den råkar komma från.
+    const existing = routeShapes[routeInfo.shortName];
+    if (existing && existing.points.length >= bestPoints.length) continue;
+
+    // Hållplatslistan för samma representativa resa som sträckan kom
+    // ifrån (via tripIdByShapeId), i rätt ordning.
+    const repTripId = tripIdByShapeId.get(bestShapeId);
+    const rawStops = repTripId ? stopSeqByTripId.get(repTripId) : null;
+    const stops = [];
+    if (rawStops) {
+      const sorted = [...rawStops].sort((a, b) => a.seq - b.seq);
+      for (const { stopId } of sorted) {
+        const s = stopsById.get(stopId);
+        if (s && s.name) stops.push({ name: s.name, lat: s.lat, lon: s.lon });
+      }
+    }
+
+    routeShapes[routeInfo.shortName] = {
+      color: routeInfo.color,
+      points: bestPoints,
+      stops,
+    };
+  }
+
   const builtAt = new Date().toISOString();
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUTPUT_DIR, "trip_lookup.json"), JSON.stringify({ builtAt, trips: tripLookup }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "rail_lines.json"), JSON.stringify({ builtAt, lines: railLines }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "train_stations.json"), JSON.stringify({ builtAt, stations: trainStations }));
+  fs.writeFileSync(path.join(OUTPUT_DIR, "bus_stops.json"), JSON.stringify({ builtAt, stops: busStops }));
+  fs.writeFileSync(path.join(OUTPUT_DIR, "route_shapes.json"), JSON.stringify({ builtAt, routes: routeShapes }));
 
-  return { tripCount: Object.keys(tripLookup).length, railLineCount: railLines.length, stationCount: trainStations.length };
+  return {
+    tripCount: Object.keys(tripLookup).length,
+    railLineCount: railLines.length,
+    stationCount: trainStations.length,
+    busStopCount: busStops.length,
+    routeShapeCount: Object.keys(routeShapes).length,
+  };
 }
 
 buildGtfsArtifacts()
