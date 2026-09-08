@@ -984,7 +984,7 @@ async function showLineForRoute(tripInfo) {
         offset: [0, -10],
         className: "line-stop-label",
       })
-      .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -10] })
+      .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -10], autoPan: false })
       .addTo(followedLineLayer);
   }
   currentRouteId = tripInfo.routeId;
@@ -1267,7 +1267,7 @@ function renderVisibleBusStops() {
     if (!bounds.contains([s.lat, s.lon])) continue;
     L.marker([s.lat, s.lon], { icon: busStopIcon() })
       .bindTooltip(s.name, { direction: "top", offset: [0, -10] })
-      .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -10] })
+      .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -10], autoPan: false })
       .addTo(busStopsLayer);
   }
 }
@@ -1449,7 +1449,7 @@ function updateVehicles(entities) {
       }
     } else {
       const marker = L.marker([lat, lon], { icon: makeDivIcon(tripInfo, isMoving) }).addTo(map);
-      const popup = L.popup({ offset: [0, -14], closeButton: false, autoClose: false, closeOnClick: false })
+      const popup = L.popup({ offset: [0, -14], closeButton: false, autoClose: false, closeOnClick: false, autoPan: false })
         .setContent(popupHtml);
       const newEntry = {
         marker, popup, iconKey, tripInfo, moving: isMoving,
@@ -1597,7 +1597,7 @@ function drawRealTrainStations(stations) {
       iconAnchor: [10, 10],
     });
     const marker = L.marker([s.lat, s.lon], { icon }).addTo(map);
-    const popup = L.popup({ offset: [0, -12] }).setContent(`<div class="popup-content"><b>${s.name}</b></div>`);
+    const popup = L.popup({ offset: [0, -12], autoPan: false }).setContent(`<div class="popup-content"><b>${s.name}</b></div>`);
     marker.bindPopup(popup);
     trainStationMarkers.set(s.name, { popup });
   }
