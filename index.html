@@ -1440,12 +1440,6 @@ const ferryLayer = L.layerGroup().addTo(map);
 // tillräckligt ljusare än själva bakgrunden (#0e0e0e) för att synas
 // mot havets färg på kartplattorna.
 const FERRY_COLOR = "#1a1a1a";
-const FERRY_SVG = `
-  <svg viewBox="0 0 40 100" xmlns="http://www.w3.org/2000/svg">
-    <path d="M20 0 L31 24 L31 78 Q31 95 20 100 Q9 95 9 78 L9 24 Z" fill="${FERRY_COLOR}"/>
-    <rect x="14" y="34" width="12" height="28" rx="2" fill="${FERRY_COLOR}" opacity="0.55"/>
-  </svg>
-`;
 
 function parseHmToSeconds(str) {
   const [h, m] = str.split(":").map(Number);
@@ -1488,20 +1482,48 @@ function computeFerryPositions() {
   return positions;
 }
 
-function ferryIcon(bearing) {
-  return L.divIcon({
-    className: "ferry-marker",
-    html: `<div style="width:20px;height:50px;transform:rotate(${bearing}deg);">${FERRY_SVG}</div>`,
-    iconSize: [20, 50],
-    iconAnchor: [10, 25],
+// Fartygets verkliga (lätt överdrivna) mått i meter — används för att
+// rita en RIKTIG geografisk polygon (inte en pixel-ikon), så den
+// naturligt blir större vid inzoomning och mindre vid utzoomning,
+// precis som vilket annat geografiskt objekt på kartan som helst.
+const SHIP_LENGTH_M = 320;
+const SHIP_WIDTH_M = 55;
+const METERS_PER_DEG_LAT = 111320;
+
+// Skrovform i ett eget lokalt koordinatsystem (x = tvärs skeppet i
+// meter, y = längs skeppet i meter, y+ = fören/färdriktningen) —
+// samma grundform som stencil-siluetten hade, fast som punkter.
+const SHIP_HULL_LOCAL_POINTS = [
+  [0, SHIP_LENGTH_M * 0.5],
+  [SHIP_WIDTH_M * 0.5, SHIP_LENGTH_M * 0.32],
+  [SHIP_WIDTH_M * 0.5, -SHIP_LENGTH_M * 0.42],
+  [0, -SHIP_LENGTH_M * 0.5],
+  [-SHIP_WIDTH_M * 0.5, -SHIP_LENGTH_M * 0.42],
+  [-SHIP_WIDTH_M * 0.5, SHIP_LENGTH_M * 0.32],
+];
+
+function shipPolygonLatLngs(centerLat, centerLon, bearingDeg) {
+  const bearingRad = (bearingDeg * Math.PI) / 180;
+  const cosLat = Math.cos((centerLat * Math.PI) / 180);
+  const metersPerDegLon = METERS_PER_DEG_LAT * cosLat;
+  return SHIP_HULL_LOCAL_POINTS.map(([x, y]) => {
+    // Rotera det lokala (x,y)-paret så att "framåt" pekar mot bearingen.
+    const rotX = x * Math.cos(bearingRad) + y * Math.sin(bearingRad);
+    const rotY = -x * Math.sin(bearingRad) + y * Math.cos(bearingRad);
+    return [centerLat + rotY / METERS_PER_DEG_LAT, centerLon + rotX / metersPerDegLon];
   });
 }
 
 function updateFerries() {
   ferryLayer.clearLayers();
   for (const p of computeFerryPositions()) {
-    L.marker([p.lat, p.lon], { icon: ferryIcon(p.bearing) })
-      .bindTooltip(`Färja mot ${p.destName}`, { direction: "top", offset: [0, -14] })
+    L.polygon(shipPolygonLatLngs(p.lat, p.lon, p.bearing), {
+      color: FERRY_COLOR,
+      weight: 0,
+      fillColor: FERRY_COLOR,
+      fillOpacity: 1,
+    })
+      .bindTooltip(`Färja mot ${p.destName}`, { direction: "top", offset: [0, -8] })
       .addTo(ferryLayer);
   }
 }
