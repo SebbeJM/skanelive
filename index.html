@@ -1439,7 +1439,7 @@ const ferryLayer = L.layerGroup().addTo(map);
 // Mörk nyans i linje med bakgrundspaletten (--line/--muted), men
 // tillräckligt ljusare än själva bakgrunden (#0e0e0e) för att synas
 // mot havets färg på kartplattorna.
-const FERRY_COLOR = "#3d3d3d";
+const FERRY_COLOR = "#1a1a1a";
 const FERRY_SVG = `
   <svg viewBox="0 0 40 100" xmlns="http://www.w3.org/2000/svg">
     <path d="M20 0 L31 24 L31 78 Q31 95 20 100 Q9 95 9 78 L9 24 Z" fill="${FERRY_COLOR}"/>
@@ -1491,9 +1491,9 @@ function computeFerryPositions() {
 function ferryIcon(bearing) {
   return L.divIcon({
     className: "ferry-marker",
-    html: `<div style="width:14px;height:34px;transform:rotate(${bearing}deg);">${FERRY_SVG}</div>`,
-    iconSize: [14, 34],
-    iconAnchor: [7, 17],
+    html: `<div style="width:20px;height:50px;transform:rotate(${bearing}deg);">${FERRY_SVG}</div>`,
+    iconSize: [20, 50],
+    iconAnchor: [10, 25],
   });
 }
 
