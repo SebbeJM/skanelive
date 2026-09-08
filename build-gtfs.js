@@ -199,6 +199,18 @@ function forEachCsvRow(text, callback) {
   }
 }
 
+// GTFS-tider kan gå förbi midnatt (t.ex. "25:30:00" för 01:30 nästa dag),
+// så vi räknar om till bara ett sekundtal sedan midnatt istället för att
+// använda JS Date-objekt, som inte hanterar det naturligt.
+function parseGtfsTimeToSeconds(timeStr) {
+  if (!timeStr) return null;
+  const parts = timeStr.trim().split(":");
+  if (parts.length !== 3) return null;
+  const h = parseInt(parts[0], 10), m = parseInt(parts[1], 10), s = parseInt(parts[2], 10);
+  if (Number.isNaN(h) || Number.isNaN(m) || Number.isNaN(s)) return null;
+  return h * 3600 + m * 60 + s;
+}
+
 // ============================================================
 // Huvudfunktionen
 // ============================================================
@@ -238,6 +250,7 @@ async function buildGtfsArtifacts() {
   const routeIdByTripId = new Map();
   const headsignByTripId = new Map();
   const shapeIdsByRoute = new Map();
+  const serviceIdByTripId = new Map();
   // Ett exempel-trip_id per shape_id, för att kunna slå upp en
   // representativ hållplatslista senare (se "Se linje"-datan nedan).
   const tripIdByShapeId = new Map();
@@ -247,8 +260,10 @@ async function buildGtfsArtifacts() {
     const routeId = (cols[idx("route_id")] || "").trim();
     const shapeId = (cols[idx("shape_id")] || "").trim();
     const headsign = (cols[idx("trip_headsign")] || "").trim();
+    const serviceId = (cols[idx("service_id")] || "").trim();
     if (tripId && routeId) routeIdByTripId.set(tripId, routeId);
     if (tripId && headsign) headsignByTripId.set(tripId, headsign);
+    if (tripId && serviceId) serviceIdByTripId.set(tripId, serviceId);
     if (routeId && shapeId) {
       if (!shapeIdsByRoute.has(routeId)) shapeIdsByRoute.set(routeId, new Set());
       shapeIdsByRoute.get(routeId).add(shapeId);
@@ -256,6 +271,29 @@ async function buildGtfsArtifacts() {
     }
   });
   console.log(`trips.txt: ${routeIdByTripId.size} resor`);
+
+  // ---- calendar.txt ---- (vilka veckodagar varje "service_id" går)
+  // OBS: calendar_dates.txt (undantag för enskilda datum, t.ex. röda
+  // dagar) läses INTE — medvetet förenklat, se kommentar vid
+  // simuleringen längre ner.
+  const serviceDaysById = new Map();
+  const calendarText = await extractFileAsText(bytes, centralDir, "calendar.txt");
+  if (calendarText) {
+    forEachCsvRow(calendarText, (cols, idx) => {
+      const serviceId = (cols[idx("service_id")] || "").trim();
+      if (!serviceId) return;
+      serviceDaysById.set(serviceId, {
+        monday: cols[idx("monday")] === "1",
+        tuesday: cols[idx("tuesday")] === "1",
+        wednesday: cols[idx("wednesday")] === "1",
+        thursday: cols[idx("thursday")] === "1",
+        friday: cols[idx("friday")] === "1",
+        saturday: cols[idx("saturday")] === "1",
+        sunday: cols[idx("sunday")] === "1",
+      });
+    });
+  }
+  console.log(`calendar.txt: ${serviceDaysById.size} scheman`);
 
   // ---- shapes.txt ----
   const shapePointsById = new Map();
@@ -315,8 +353,10 @@ async function buildGtfsArtifacts() {
       const existing = lastStopByTripId.get(tripId);
       if (!existing || seqNum > existing.seq) lastStopByTripId.set(tripId, { seq: seqNum, stopId });
 
+      const arr = parseGtfsTimeToSeconds(cols[idx("arrival_time")]);
+      const dep = parseGtfsTimeToSeconds(cols[idx("departure_time")]);
       if (!stopSeqByTripId.has(tripId)) stopSeqByTripId.set(tripId, []);
-      stopSeqByTripId.get(tripId).push({ seq: seqNum, stopId });
+      stopSeqByTripId.get(tripId).push({ seq: seqNum, stopId, arr, dep });
 
       if (!railTripIds.has(tripId)) return;
       railStopIds.add(stopId);
@@ -396,6 +436,35 @@ async function buildGtfsArtifacts() {
     }
   }
   console.log(`${oresundstagBySameNameCount} YTTERLIGARE linjer identifierade som Öresundståg (samma linjenummer som en redan identifierad route_id)`);
+
+  // ---- Öresundståg-tidtabell (för simulering, eftersom realtidsdata
+  // saknas helt för denna linje — se tidigare research i konversationen)
+  // ----
+  // FÖRENKLAT MEDVETET: calendar_dates.txt (undantag för enskilda
+  // datum, t.ex. röda dagar, inställda turer) läses inte. Simuleringen
+  // vet alltså inte om en specifik tur är inställd eller flyttad —
+  // bara vad den vanliga veckodagen säger. Detta är en känd, accepterad
+  // begränsning för att hålla det hela så enkelt som möjligt.
+  const oresundstagSchedule = [];
+  for (const [tripId, routeId] of routeIdByTripId) {
+    const routeInfo = routesById.get(routeId);
+    if (!routeInfo || routeInfo.brand !== "oresundstag") continue;
+    const serviceId = serviceIdByTripId.get(tripId);
+    const days = serviceId ? serviceDaysById.get(serviceId) : null;
+    if (!days) continue;
+    const rawStops = stopSeqByTripId.get(tripId);
+    if (!rawStops || rawStops.length < 2) continue;
+    const sorted = [...rawStops].sort((a, b) => a.seq - b.seq);
+    const stops = [];
+    for (const { stopId, arr, dep } of sorted) {
+      const s = stopsById.get(stopId);
+      if (!s || !s.name || arr == null || dep == null) continue;
+      stops.push({ name: s.name, lat: s.lat, lon: s.lon, arr, dep });
+    }
+    if (stops.length < 2) continue;
+    oresundstagSchedule.push({ tripId, days, stops });
+  }
+  console.log(`Öresundståg-tidtabell: ${oresundstagSchedule.length} resor med fullständig schemadata`);
 
   // ============================================================
   // Bygg de tre färdiga artefakterna
@@ -549,6 +618,7 @@ function minDistanceToPointMeters(points, target) {
   fs.writeFileSync(path.join(OUTPUT_DIR, "train_stations.json"), JSON.stringify({ builtAt, stations: trainStations }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "bus_stops.json"), JSON.stringify({ builtAt, stops: busStops }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "route_shapes.json"), JSON.stringify({ builtAt, routes: routeShapes }));
+  fs.writeFileSync(path.join(OUTPUT_DIR, "oresundstag_schedule.json"), JSON.stringify({ builtAt, trips: oresundstagSchedule }));
 
   return {
     tripCount: Object.keys(tripLookup).length,
@@ -556,6 +626,7 @@ function minDistanceToPointMeters(points, target) {
     stationCount: trainStations.length,
     busStopCount: busStops.length,
     routeShapeCount: Object.keys(routeShapes).length,
+    oresundstagScheduleCount: oresundstagSchedule.length,
   };
 }
 
