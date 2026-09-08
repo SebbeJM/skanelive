@@ -1461,7 +1461,7 @@ function computeFerryPositions() {
   const now = new Date();
   const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
   const positions = [];
-  function addIfActive(depStr, durationMin, from, to, destName) {
+  function addIfActive(key, depStr, durationMin, from, to, destName) {
     const depSec = parseHmToSeconds(depStr);
     const arrSec = depSec + durationMin * 60;
     // Kolla både "avgick idag" och "avgick igår men pågår fortfarande
@@ -1471,14 +1471,14 @@ function computeFerryPositions() {
       const frac = (nowRef - depSec) / (arrSec - depSec);
       const lat = from[0] + (to[0] - from[0]) * frac;
       const lon = from[1] + (to[1] - from[1]) * frac;
-      positions.push({ lat, lon, destName, bearing: computeBearingDeg(from[0], from[1], to[0], to[1]) });
+      positions.push({ key, lat, lon, destName, bearing: computeBearingDeg(from[0], from[1], to[0], to[1]) });
       return;
     }
   }
-  for (const route of FERRY_ROUTES) {
-    for (const [dep, dur] of route.departuresFrom) addIfActive(dep, dur, route.from, route.to, route.toName);
-    for (const [dep, dur] of route.departuresTo) addIfActive(dep, dur, route.to, route.from, route.fromName);
-  }
+  FERRY_ROUTES.forEach((route, routeIdx) => {
+    route.departuresFrom.forEach(([dep, dur], i) => addIfActive(`${routeIdx}-from-${i}`, dep, dur, route.from, route.to, route.toName));
+    route.departuresTo.forEach(([dep, dur], i) => addIfActive(`${routeIdx}-to-${i}`, dep, dur, route.to, route.from, route.fromName));
+  });
   return positions;
 }
 
@@ -1514,21 +1514,51 @@ function shipPolygonLatLngs(centerLat, centerLon, bearingDeg) {
   });
 }
 
+// Håller koll på befintliga polygon-objekt per färja (nyckel = vilken
+// specifik avgång) så vi kan FLYTTA dem varje bildruta istället för
+// att skapa/förstöra polygoner om och om igen — mycket smidigare och
+// effektivare, och ger en helt kontinuerlig rörelse utan hack.
+const ferryPolygonsByKey = new Map();
+
 function updateFerries() {
-  ferryLayer.clearLayers();
-  for (const p of computeFerryPositions()) {
-    L.polygon(shipPolygonLatLngs(p.lat, p.lon, p.bearing), {
-      color: FERRY_COLOR,
-      weight: 0,
-      fillColor: FERRY_COLOR,
-      fillOpacity: 1,
-    })
-      .bindTooltip(`Färja mot ${p.destName}`, { direction: "top", offset: [0, -8] })
-      .addTo(ferryLayer);
+  const active = computeFerryPositions();
+  const activeKeys = new Set();
+  for (const p of active) {
+    activeKeys.add(p.key);
+    const points = shipPolygonLatLngs(p.lat, p.lon, p.bearing);
+    const existing = ferryPolygonsByKey.get(p.key);
+    if (existing) {
+      existing.setLatLngs(points);
+    } else {
+      const polygon = L.polygon(points, {
+        color: FERRY_COLOR,
+        weight: 0,
+        fillColor: FERRY_COLOR,
+        fillOpacity: 1,
+      })
+        .bindTooltip(`Färja mot ${p.destName}`, { direction: "top", offset: [0, -8] })
+        .addTo(ferryLayer);
+      ferryPolygonsByKey.set(p.key, polygon);
+    }
+  }
+  // Ta bort polygoner för resor som inte längre är aktiva (t.ex. har
+  // anlänt).
+  for (const [key, polygon] of ferryPolygonsByKey) {
+    if (!activeKeys.has(key)) {
+      ferryLayer.removeLayer(polygon);
+      ferryPolygonsByKey.delete(key);
+    }
   }
 }
-setInterval(updateFerries, 20000);
-updateFerries();
+function ferryAnimationLoop() {
+  updateFerries();
+  requestAnimationFrame(ferryAnimationLoop);
+}
+// Positionen är redan en exakt matematisk funktion av klockan (ingen
+// interpolering mellan "kända punkter" behövs) — körs därför varje
+// bildruta (~60 ggr/sek) via requestAnimationFrame för en helt
+// kontinuerlig rörelse utan synliga hack.
+ferryAnimationLoop();
 
 const markers = new Map();
 let staticDataLoaded = false;
