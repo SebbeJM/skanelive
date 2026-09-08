@@ -1402,6 +1402,112 @@ function updateSimulatedOresundstag() {
 }
 setInterval(updateSimulatedOresundstag, 15000);
 
+// ============================================================
+// Simulerade färjor — rent bakgrundselement, samma idé som
+// Öresundståg-simuleringen (uträknat från hårdkodade tidtabeller,
+// ingen realtidsdata finns eller behövs för detta). Mörk stencil-
+// siluett i linje med bakgrundspaletten, roterad efter färdriktning.
+// ============================================================
+const FERRY_ROUTES = [
+  {
+    fromName: "Trelleborg", from: [55.375, 13.156],
+    toName: "Rostock", to: [54.1806, 12.0894],
+    departuresFrom: [["07:30", 360], ["09:25", 350], ["12:00", 450], ["14:45", 375], ["15:00", 360], ["22:55", 435], ["23:00", 480]],
+    departuresTo: [["06:30", 390], ["07:30", 360], ["09:00", 360], ["11:45", 375], ["14:00", 300], ["15:10", 360], ["22:00", 460], ["22:30", 430]],
+  },
+  {
+    fromName: "Trelleborg", from: [55.375, 13.156],
+    toName: "Travemünde", to: [53.9606, 10.8696],
+    departuresFrom: [["15:15", 450], ["22:00", 525]],
+    departuresTo: [["08:00", 450], ["21:00", 480]],
+  },
+  {
+    fromName: "Ystad", from: [55.4295, 13.8215],
+    toName: "Świnoujście", to: [53.9106, 14.2478],
+    departuresFrom: [["00:30", 450], ["08:50", 375], ["13:00", 450], ["21:00", 420], ["22:45", 435], ["23:50", 450]],
+    departuresTo: [["06:30", 390], ["11:00", 390], ["13:00", 390], ["18:30", 465], ["22:30", 390], ["23:30", 390]],
+  },
+  {
+    fromName: "Ystad", from: [55.4295, 13.8215],
+    toName: "Rønne", to: [55.0995, 14.7024],
+    departuresFrom: [["06:30", 80], ["10:30", 80], ["16:30", 80], ["20:30", 80]],
+    departuresTo: [["08:30", 80], ["12:30", 80], ["18:30", 80], ["22:30", 80]],
+  },
+];
+
+const ferryLayer = L.layerGroup().addTo(map);
+// Mörk nyans i linje med bakgrundspaletten (--line/--muted), men
+// tillräckligt ljusare än själva bakgrunden (#0e0e0e) för att synas
+// mot havets färg på kartplattorna.
+const FERRY_COLOR = "#3d3d3d";
+const FERRY_SVG = `
+  <svg viewBox="0 0 40 100" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 0 L31 24 L31 78 Q31 95 20 100 Q9 95 9 78 L9 24 Z" fill="${FERRY_COLOR}"/>
+    <rect x="14" y="34" width="12" height="28" rx="2" fill="${FERRY_COLOR}" opacity="0.55"/>
+  </svg>
+`;
+
+function parseHmToSeconds(str) {
+  const [h, m] = str.split(":").map(Number);
+  return h * 3600 + m * 60;
+}
+
+// Enkel kompass-bearing (grader medurs från norr) mellan två punkter —
+// tillräckligt exakt för dessa korta/lokala sträckor.
+function computeBearingDeg(fromLat, fromLon, toLat, toLon) {
+  const latRad = (fromLat * Math.PI) / 180;
+  const x = (toLon - fromLon) * Math.cos(latRad);
+  const y = toLat - fromLat;
+  let deg = (Math.atan2(x, y) * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+  return deg;
+}
+
+function computeFerryPositions() {
+  const now = new Date();
+  const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  const positions = [];
+  function addIfActive(depStr, durationMin, from, to, destName) {
+    const depSec = parseHmToSeconds(depStr);
+    const arrSec = depSec + durationMin * 60;
+    // Kolla både "avgick idag" och "avgick igår men pågår fortfarande
+    // in på småtimmarna" (samma idé som Öresundståg-simuleringen).
+    for (const nowRef of [nowSeconds, nowSeconds + 86400]) {
+      if (nowRef < depSec || nowRef > arrSec) continue;
+      const frac = (nowRef - depSec) / (arrSec - depSec);
+      const lat = from[0] + (to[0] - from[0]) * frac;
+      const lon = from[1] + (to[1] - from[1]) * frac;
+      positions.push({ lat, lon, destName, bearing: computeBearingDeg(from[0], from[1], to[0], to[1]) });
+      return;
+    }
+  }
+  for (const route of FERRY_ROUTES) {
+    for (const [dep, dur] of route.departuresFrom) addIfActive(dep, dur, route.from, route.to, route.toName);
+    for (const [dep, dur] of route.departuresTo) addIfActive(dep, dur, route.to, route.from, route.fromName);
+  }
+  return positions;
+}
+
+function ferryIcon(bearing) {
+  return L.divIcon({
+    className: "ferry-marker",
+    html: `<div style="width:14px;height:34px;transform:rotate(${bearing}deg);">${FERRY_SVG}</div>`,
+    iconSize: [14, 34],
+    iconAnchor: [7, 17],
+  });
+}
+
+function updateFerries() {
+  ferryLayer.clearLayers();
+  for (const p of computeFerryPositions()) {
+    L.marker([p.lat, p.lon], { icon: ferryIcon(p.bearing) })
+      .bindTooltip(`Färja mot ${p.destName}`, { direction: "top", offset: [0, -14] })
+      .addTo(ferryLayer);
+  }
+}
+setInterval(updateFerries, 20000);
+updateFerries();
+
 const markers = new Map();
 let staticDataLoaded = false;
 const ZOOM_LABEL_THRESHOLD = 14; // höjt från 12 — kräver mer inzoomning innan linjenummer visas
