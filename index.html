@@ -426,6 +426,11 @@
     align-items: center;
     gap: 1rem;
   }
+  .follow-hud-btn-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
   #follow-hud-text {
     flex: 1;
     min-width: 0;
@@ -548,7 +553,15 @@
       transform: translateY(-100%);
     }
     .follow-hud-inner {
+      flex-direction: column;
+      align-items: stretch;
       gap: 0.5rem;
+    }
+    .follow-hud-btn-row {
+      width: 100%;
+    }
+    .follow-hud-btn-row button {
+      flex: 1;
     }
     #follow-hud-text b {
       font-size: 0.8rem;
@@ -624,8 +637,10 @@
     <div id="follow-hud">
       <div class="follow-hud-inner">
         <div id="follow-hud-text"></div>
-        <button id="follow-hud-line-btn">Se linje</button>
-        <button id="follow-hud-close">Sluta följa</button>
+        <div class="follow-hud-btn-row">
+          <button id="follow-hud-line-btn">Se linje</button>
+          <button id="follow-hud-close">Sluta följa</button>
+        </div>
       </div>
     </div>
     <div id="line-hud">
