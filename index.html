@@ -656,7 +656,7 @@
       <a href="contact.html">Kontakt</a>
     </div>
     <div id="filter-panel">
-      <label><input type="checkbox" id="show-rail-lines-checkbox" checked> Visa spårlinjer på kartan</label>
+      <label><input type="checkbox" id="show-rail-lines-checkbox" checked> Visa spår och tågstationer</label>
     </div>
     <div id="search-panel">
       <input id="search-input" type="text" placeholder="Linjenummer, t.ex. 5" autocomplete="off">
@@ -692,6 +692,7 @@ const RAIL_LINES_URL = "data/rail_lines.json";
 const TRAIN_STATIONS_URL = "data/train_stations.json";
 const BUS_STOPS_URL = "data/bus_stops.json";
 const ROUTE_SHAPES_URL = "data/route_shapes.json";
+const ORESUNDSTAG_SCHEDULE_URL = "data/oresundstag_schedule.json";
 const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
 const POLL_INTERVAL_MS = 2000; // 2 sekunder — Silver-nyckel godkänd
 const MAP_CENTER = [55.605, 12.9998];
@@ -777,8 +778,10 @@ document.addEventListener("click", (e) => {
 showRailLinesCheckbox.addEventListener("change", () => {
   if (showRailLinesCheckbox.checked) {
     routeLinesLayer.addTo(map);
+    trainStationsLayer.addTo(map);
   } else {
     map.removeLayer(routeLinesLayer);
+    map.removeLayer(trainStationsLayer);
   }
 });
 
@@ -1336,6 +1339,69 @@ function scheduleRenderVisibleBusStops() {
 map.on("moveend", scheduleRenderVisibleBusStops);
 map.on("zoomend", scheduleRenderVisibleBusStops);
 
+// ============================================================
+// Simulerade Öresundståg — Skånetrafiken saknar helt realtidsdata för
+// denna linje (bekräftat: se tidigare research), så vi räknar istället
+// ut en UPPSKATTAD position utifrån tidtabellen och aktuell klocka.
+// Ingen förseningsdata finns, så det antas alltid gå exakt enligt
+// schema. calendar_dates.txt (undantag för enskilda datum) läses inte
+// heller server-sidan — se kommentar där filen byggs.
+// ============================================================
+let oresundstagSchedule = [];
+const simulatedOresundstagLayer = L.layerGroup().addTo(map);
+const DAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]; // matchar Date.getDay()
+// En "låtsas"-tripInfo som återanvänder exakt samma ikonstil som
+// riktiga Öresundståg-fordon (samma färg, samma rälsutseende).
+const SIMULATED_ORESUNDSTAG_TRIPINFO = { color: "a3a9ad", textColor: "000000", line: "Ö", type: 100, brand: "oresundstag" };
+
+function computeSimulatedOresundstagPositions() {
+  const now = new Date();
+  const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  const todayKey = DAY_KEYS[now.getDay()];
+  const yesterdayKey = DAY_KEYS[(now.getDay() + 6) % 7];
+  const positions = [];
+  for (const trip of oresundstagSchedule) {
+    // En resa som går sent på kvällen kan sträcka sig förbi midnatt —
+    // kolla därför både "hör till IDAG" och "hör till IGÅR men pågår
+    // fortfarande in på småtimmarna".
+    let refSeconds = null;
+    if (trip.days[todayKey]) refSeconds = nowSeconds;
+    else if (trip.days[yesterdayKey]) refSeconds = nowSeconds + 86400;
+    if (refSeconds == null) continue;
+    const stops = trip.stops;
+    const first = stops[0], last = stops[stops.length - 1];
+    if (refSeconds < first.dep || refSeconds > last.arr) continue;
+    for (let i = 0; i < stops.length - 1; i++) {
+      const a = stops[i], b = stops[i + 1];
+      if (refSeconds < a.dep || refSeconds > b.arr) continue;
+      const segStart = a.dep, segEnd = b.arr;
+      const frac = segEnd > segStart ? (refSeconds - segStart) / (segEnd - segStart) : 0;
+      positions.push({
+        tripId: trip.tripId,
+        lat: a.lat + (b.lat - a.lat) * frac,
+        lon: a.lon + (b.lon - a.lon) * frac,
+        destination: last.name,
+      });
+      break;
+    }
+  }
+  return positions;
+}
+
+function updateSimulatedOresundstag() {
+  simulatedOresundstagLayer.clearLayers();
+  for (const p of computeSimulatedOresundstagPositions()) {
+    L.marker([p.lat, p.lon], { icon: makeDivIcon(SIMULATED_ORESUNDSTAG_TRIPINFO, true) })
+      .bindPopup(
+        `<div class="popup-content"><b>Öresundståg</b><br>På väg mot: ${p.destination}<br>` +
+        `<span style="opacity:0.7;font-size:0.85em;">(beräknad position enligt tidtabell — ingen realtidsdata finns för denna linje)</span></div>`,
+        { offset: [0, -12], autoPan: false }
+      )
+      .addTo(simulatedOresundstagLayer);
+  }
+}
+setInterval(updateSimulatedOresundstag, 15000);
+
 const markers = new Map();
 let staticDataLoaded = false;
 const ZOOM_LABEL_THRESHOLD = 14; // höjt från 12 — kräver mer inzoomning innan linjenummer visas
@@ -1598,6 +1664,19 @@ async function loadRouteColors() {
   } catch (err) {
     console.warn("Kunde inte ladda busshållplatser (finns filen ännu inte?):", err);
   }
+
+  // Öresundståg-tidtabellen, för simuleringen (se längre ner) — separat
+  // try/catch av samma anledning som busshållplatserna ovan.
+  try {
+    const scheduleRes = await fetch(ORESUNDSTAG_SCHEDULE_URL, { cache: "no-store" });
+    if (!scheduleRes.ok) throw new Error(`oresundstag_schedule.json: HTTP ${scheduleRes.status}`);
+    const scheduleData = await scheduleRes.json();
+    oresundstagSchedule = scheduleData.trips;
+    console.log(`Laddade Öresundståg-tidtabell: ${oresundstagSchedule.length} resor`);
+    updateSimulatedOresundstag();
+  } catch (err) {
+    console.warn("Kunde inte ladda Öresundståg-tidtabellen (finns filen ännu inte?):", err);
+  }
 }
 async function fetchVehiclePositions() {
   const res = await fetch(PROXY_URL, { cache: "no-store" });
@@ -1638,6 +1717,7 @@ const TRAIN_ICON_SVG = `
   </svg>
 `;
 const trainStationMarkers = new Map();
+const trainStationsLayer = L.layerGroup().addTo(map);
 function drawRealTrainStations(stations) {
   for (const s of stations) {
     if (!s.name) continue;
@@ -1647,7 +1727,7 @@ function drawRealTrainStations(stations) {
       iconSize: [20, 20],
       iconAnchor: [10, 10],
     });
-    const marker = L.marker([s.lat, s.lon], { icon }).addTo(map);
+    const marker = L.marker([s.lat, s.lon], { icon }).addTo(trainStationsLayer);
     const popup = L.popup({ offset: [0, -12], autoPan: false }).setContent(`<div class="popup-content"><b>${s.name}</b></div>`);
     marker.bindPopup(popup);
     trainStationMarkers.set(s.name, { popup });
