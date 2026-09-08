@@ -988,11 +988,16 @@ async function showLineForRoute(tripInfo) {
       .addTo(followedLineLayer);
   }
   currentRouteId = tripInfo.routeId;
-  lineHudText.innerHTML = `<b>Visar linje: ${lineLabelFor(tripInfo, displayName)}</b>`;
-  lineHud.classList.add("visible");
-  if (followedTripInfo && followedTripInfo.line === displayName) {
+  const isFollowedVehiclesLine = followedTripInfo && followedTripInfo.routeId === tripInfo.routeId;
+  if (isFollowedVehiclesLine) {
+    // Följ-rutan har redan sin egen "Dölj linje"-knapp för det här
+    // fallet — visa inte en till, separat status-ruta i onödan.
+    lineHud.classList.remove("visible");
     followLineBtn.classList.add("active");
     followLineBtn.textContent = "Dölj linje";
+  } else {
+    lineHudText.innerHTML = `<b>Visar linje: ${lineLabelFor(tripInfo, displayName)}</b>`;
+    lineHud.classList.add("visible");
   }
 }
 
@@ -1077,6 +1082,19 @@ window.startFollow = function(id) {
   });
 };
 
+// På mobilen ligger följ-rutan som ett eget fält längst ner och täcker
+// en del av kartan — räknar därför ut var mitten av det SYNLIGA området
+// (ovanför rutan) faktiskt är, i stället för hela kartytans geometriska
+// mitt, så fordonet inte hamnar dolt/lågt bakom rutan.
+function getFollowTargetLatLng(latlng, zoom) {
+  if (window.innerWidth > 700) return latlng; // oförändrat på desktop
+  const hudHeight = followHud.classList.contains("visible") ? followHud.offsetHeight : 0;
+  if (!hudHeight) return latlng;
+  const point = map.project(latlng, zoom);
+  const shiftedPoint = L.point(point.x, point.y + hudHeight / 2);
+  return map.unproject(shiftedPoint, zoom);
+}
+
 function beginFollowSession(id, latlng, hudData) {
   map.closePopup();
   for (const e of markers.values()) {
@@ -1086,7 +1104,7 @@ function beginFollowSession(id, latlng, hudData) {
   updateFollowHud(hudData);
   followHud.classList.add("visible");
   beginProgrammaticCameraMove(900);
-  map.flyTo(latlng, FOLLOW_ZOOM, {
+  map.flyTo(getFollowTargetLatLng(latlng, FOLLOW_ZOOM), FOLLOW_ZOOM, {
     duration: 0.9,
     easeLinearity: 0.35
   });
@@ -1422,7 +1440,7 @@ function updateVehicles(entities) {
         // sedan STÅR STILL och väntar tills nästa hämtning, medan
         // ikonen fortsätter glida mjukt hela vägen. Det gav den
         // "hackiga" känslan.
-        map.panTo([lat, lon], {
+        map.panTo(getFollowTargetLatLng(L.latLng(lat, lon), map.getZoom()), {
           animate: true,
           duration: clamped / 1000,
           easeLinearity: 1, // linjär, matchar ikonens egen linjära CSS-glidning
