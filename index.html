@@ -523,6 +523,41 @@
       margin-top: 0.5rem;
       z-index: 1000;
     }
+    /* Tunnare, mer kompakt följ-ruta på mobilen — ligger platt mot
+       skärmens nederkant istället för att sväva mitt i bilden och ta
+       upp mycket plats. */
+    #follow-hud, #line-hud {
+      left: 0;
+      right: 0;
+      bottom: 0;
+      transform: none;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+      border-bottom: none;
+      padding: 0.5rem 0.75rem;
+      padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+      font-size: 0.75rem;
+      line-height: 1.3;
+    }
+    #follow-hud.visible ~ #line-hud.visible {
+      bottom: 0;
+      transform: translateY(-100%);
+    }
+    .follow-hud-inner {
+      gap: 0.5rem;
+    }
+    #follow-hud-text b {
+      font-size: 0.8rem;
+      margin-bottom: 0.05em;
+    }
+    #follow-hud-close, #follow-hud-line-btn {
+      padding: 0.35rem 0.55rem;
+      font-size: 0.72rem;
+    }
     header {
       flex-wrap: wrap;
       row-gap: 0.5rem;
