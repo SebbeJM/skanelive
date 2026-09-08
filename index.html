@@ -1216,6 +1216,9 @@ function updateFollowHud(entry) {
     ${destination ? `På väg mot: ${destination}<br>` : ""}
     Hastighet: ${speedText}
   `;
+  // "Se linje" är bara relevant för bussar — tåg följer redan sina
+  // egna, fasta spår som alltid syns på kartan.
+  followLineBtn.style.display = tripInfo && isRailRouteType(tripInfo.type) ? "none" : "";
 }
 
 // Bara riktig dragning (panorering) och klick avbryter följningen.
@@ -1584,10 +1587,13 @@ function renderPopupHtml(baseHtml, pinned, id) {
     ? baseHtml.replace('<div class="popup-content">', `<div class="popup-content">${PIN_ICON_SVG}`)
     : baseHtml;
   if (followedId === id) return html;
+  const entry = markers.get(id);
+  const isTrain = entry && entry.tripInfo && isRailRouteType(entry.tripInfo.type);
+  const lineBtnHtml = isTrain ? "" : `<button class="follow-btn" onclick="event.stopPropagation(); window.showLineForVehicle('${id}')">Se linje</button>`;
   html = html.replace(
     '</div>',
     `<div class="popup-btn-row">
-      <button class="follow-btn" onclick="event.stopPropagation(); window.showLineForVehicle('${id}')">Se linje</button>
+      ${lineBtnHtml}
       <button class="follow-btn" onclick="event.stopPropagation(); window.startFollow('${id}')">Följ resan</button>
     </div></div>`
   );
