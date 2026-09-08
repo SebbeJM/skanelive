@@ -146,15 +146,20 @@
   #mobile-menu.open {
     display: flex;
   }
-  #mobile-menu a {
+  #mobile-menu a, #mobile-menu button {
     color: var(--fg);
     text-decoration: none;
     padding: 0.5rem 0.8rem;
     font-size: 0.85rem;
     border-radius: 4px;
     white-space: nowrap;
+    background: none;
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
   }
-  #mobile-menu a:hover {
+  #mobile-menu a:hover, #mobile-menu button:hover {
     background: var(--bg);
   }
   #status.live .dot {
@@ -317,7 +322,7 @@
     border-color: var(--accent);
     background: #222;
   }
-  #search-btn {
+  #search-btn, #filter-btn {
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -329,10 +334,10 @@
     padding: 0.4rem 0.55rem;
     cursor: pointer;
   }
-  #search-btn:hover {
+  #search-btn:hover, #filter-btn:hover {
     border-color: var(--muted);
   }
-  #search-panel {
+  #search-panel, #filter-panel {
     display: none;
     position: absolute;
     top: 100%;
@@ -347,8 +352,15 @@
     max-width: 85vw;
     box-shadow: 0 6px 24px rgba(0,0,0,0.55);
   }
-  #search-panel.open {
+  #search-panel.open, #filter-panel.open {
     display: block;
+  }
+  #filter-panel label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    cursor: pointer;
   }
   #search-input {
     width: 100%;
@@ -600,7 +612,7 @@
       justify-content: flex-start;
       overflow-x: auto;
     }
-    #contact-btn {
+    #contact-btn, #filter-btn {
       display: none;
     }
     #menu-btn {
@@ -627,6 +639,9 @@
       <span>Denna månad: <strong id="visitors-month">–</strong></span>
     </div>
     <div class="header-right">
+      <button id="filter-btn" aria-label="Filtrera fordonstyper">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+      </button>
       <button id="search-btn" aria-label="Sök buss/tåg">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
       </button>
@@ -637,7 +652,11 @@
       </button>
     </div>
     <div id="mobile-menu">
+      <button id="mobile-filter-btn">Filtrera fordon</button>
       <a href="contact.html">Kontakt</a>
+    </div>
+    <div id="filter-panel">
+      <label><input type="checkbox" id="show-rail-lines-checkbox" checked> Visa spårlinjer på kartan</label>
     </div>
     <div id="search-panel">
       <input id="search-input" type="text" placeholder="Linjenummer, t.ex. 5" autocomplete="off">
@@ -728,6 +747,38 @@ document.addEventListener("click", (e) => {
   if (!mobileMenu.contains(e.target) && e.target !== menuBtn) {
     mobileMenu.classList.remove("open");
     menuBtn.setAttribute("aria-expanded", "false");
+  }
+});
+
+// ============================================================
+// Filtrera fordonstyper — just nu bara spårlinjerna på/av (tågens
+// egna ikoner syns alltid, oavsett den här inställningen).
+// ============================================================
+const filterBtn = document.getElementById("filter-btn");
+const mobileFilterBtn = document.getElementById("mobile-filter-btn");
+const filterPanel = document.getElementById("filter-panel");
+const showRailLinesCheckbox = document.getElementById("show-rail-lines-checkbox");
+
+function toggleFilterPanel(e) {
+  e.stopPropagation();
+  filterPanel.classList.toggle("open");
+}
+filterBtn.addEventListener("click", toggleFilterPanel);
+mobileFilterBtn.addEventListener("click", (e) => {
+  toggleFilterPanel(e);
+  mobileMenu.classList.remove("open");
+  menuBtn.setAttribute("aria-expanded", "false");
+});
+document.addEventListener("click", (e) => {
+  if (!filterPanel.contains(e.target) && e.target !== filterBtn && e.target !== mobileFilterBtn) {
+    filterPanel.classList.remove("open");
+  }
+});
+showRailLinesCheckbox.addEventListener("change", () => {
+  if (showRailLinesCheckbox.checked) {
+    routeLinesLayer.addTo(map);
+  } else {
+    map.removeLayer(routeLinesLayer);
   }
 });
 
