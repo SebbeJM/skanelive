@@ -1352,7 +1352,6 @@ map.on("zoomend", scheduleRenderVisibleBusStops);
 // ============================================================
 let oresundstagSchedule = [];
 const simulatedOresundstagLayer = L.layerGroup().addTo(map);
-const DAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]; // matchar Date.getDay()
 // En "låtsas"-tripInfo som återanvänder exakt samma ikonstil som
 // riktiga Öresundståg-fordon (samma färg, samma rälsutseende).
 const SIMULATED_ORESUNDSTAG_TRIPINFO = { color: "a3a9ad", textColor: "000000", line: "Ö", type: 100, brand: "oresundstag" };
@@ -1360,16 +1359,14 @@ const SIMULATED_ORESUNDSTAG_TRIPINFO = { color: "a3a9ad", textColor: "000000", l
 function computeSimulatedOresundstagPositions() {
   const now = new Date();
   const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  const todayKey = DAY_KEYS[now.getDay()];
-  const yesterdayKey = DAY_KEYS[(now.getDay() + 6) % 7];
   const positions = [];
   for (const trip of oresundstagSchedule) {
     // En resa som går sent på kvällen kan sträcka sig förbi midnatt —
     // kolla därför både "hör till IDAG" och "hör till IGÅR men pågår
     // fortfarande in på småtimmarna".
     let refSeconds = null;
-    if (trip.days[todayKey]) refSeconds = nowSeconds;
-    else if (trip.days[yesterdayKey]) refSeconds = nowSeconds + 86400;
+    if (trip.validToday) refSeconds = nowSeconds;
+    else if (trip.validYesterday) refSeconds = nowSeconds + 86400;
     if (refSeconds == null) continue;
     const stops = trip.stops;
     const first = stops[0], last = stops[stops.length - 1];
