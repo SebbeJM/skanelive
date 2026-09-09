@@ -1356,6 +1356,48 @@ const simulatedOresundstagLayer = L.layerGroup().addTo(map);
 // riktiga Öresundståg-fordon (samma färg, samma rälsutseende).
 const SIMULATED_ORESUNDSTAG_TRIPINFO = { color: "a3a9ad", textColor: "000000", line: "Ö", type: 100, brand: "oresundstag" };
 
+// Hittar en punkt en given ANDEL av vägen längs en hel kurva (mätt i
+// verklig sträckans längd, inte antal punkter) — så simuleringen kan
+// följa den riktiga spårgeometrin istället för en rak linje.
+function distanceMeters(a, b) {
+  const latRef = (a[0] + b[0]) / 2;
+  const cosLat = Math.cos((latRef * Math.PI) / 180);
+  const mPerDegLat = 111320;
+  const dx = (b[1] - a[1]) * cosLat * mPerDegLat;
+  const dy = (b[0] - a[0]) * mPerDegLat;
+  return Math.hypot(dx, dy);
+}
+function pointAlongPolylineFraction(points, fraction) {
+  if (points.length < 2) return points[0];
+  let totalLength = 0;
+  const segLengths = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const len = distanceMeters(points[i], points[i + 1]);
+    segLengths.push(len);
+    totalLength += len;
+  }
+  const targetDist = Math.max(0, Math.min(1, fraction)) * totalLength;
+  let acc = 0;
+  for (let i = 0; i < segLengths.length; i++) {
+    if (acc + segLengths[i] >= targetDist || i === segLengths.length - 1) {
+      const segFrac = segLengths[i] > 0 ? (targetDist - acc) / segLengths[i] : 0;
+      const a = points[i], b = points[i + 1];
+      return [a[0] + (b[0] - a[0]) * segFrac, a[1] + (b[1] - a[1]) * segFrac];
+    }
+    acc += segLengths[i];
+  }
+  return points[points.length - 1];
+}
+
+function findNearestPointIndex(points, target) {
+  let bestIdx = 0, bestDist = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const d = distanceMeters(points[i], target);
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
 function computeSimulatedOresundstagPositions() {
   const now = new Date();
   const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
@@ -1371,36 +1413,75 @@ function computeSimulatedOresundstagPositions() {
     const stops = trip.stops;
     const first = stops[0], last = stops[stops.length - 1];
     if (refSeconds < first.dep || refSeconds > last.arr) continue;
+    const routeShape = routeShapesCache && routeShapesCache[trip.routeId];
     for (let i = 0; i < stops.length - 1; i++) {
       const a = stops[i], b = stops[i + 1];
       if (refSeconds < a.dep || refSeconds > b.arr) continue;
       const segStart = a.dep, segEnd = b.arr;
       const frac = segEnd > segStart ? (refSeconds - segStart) / (segEnd - segStart) : 0;
-      positions.push({
-        tripId: trip.tripId,
-        lat: a.lat + (b.lat - a.lat) * frac,
-        lon: a.lon + (b.lon - a.lon) * frac,
-        destination: last.name,
-      });
+      let lat = null, lon = null;
+      // Följ den RIKTIGA spårkurvan mellan de två hållplatserna, inte
+      // en rak linje — hittar närmaste punkt på sträckan till vardera
+      // hållplats, och interpolerar bara i det avsnittet däremellan.
+      if (routeShape && routeShape.points && routeShape.points.length > 1) {
+        const idxA = findNearestPointIndex(routeShape.points, [a.lat, a.lon]);
+        const idxB = findNearestPointIndex(routeShape.points, [b.lat, b.lon]);
+        const subPath = idxA <= idxB
+          ? routeShape.points.slice(idxA, idxB + 1)
+          : routeShape.points.slice(idxB, idxA + 1).reverse();
+        if (subPath.length >= 2) {
+          const pt = pointAlongPolylineFraction(subPath, frac);
+          lat = pt[0];
+          lon = pt[1];
+        }
+      }
+      if (lat == null) {
+        // Reservläge: rak linje, ifall spårgeometrin skulle saknas.
+        lat = a.lat + (b.lat - a.lat) * frac;
+        lon = a.lon + (b.lon - a.lon) * frac;
+      }
+      positions.push({ tripId: trip.tripId, lat, lon, destination: last.name });
       break;
     }
   }
   return positions;
 }
 
+// Håller koll på befintliga markörer per resa (samma idé som
+// färjornas kontinuerliga animation) — flyttar dem varje bildruta
+// istället för att skapa/förstöra dem, för en helt mjuk rörelse.
+const simulatedOresundstagMarkersByTripId = new Map();
+
 function updateSimulatedOresundstag() {
-  simulatedOresundstagLayer.clearLayers();
-  for (const p of computeSimulatedOresundstagPositions()) {
-    L.marker([p.lat, p.lon], { icon: makeDivIcon(SIMULATED_ORESUNDSTAG_TRIPINFO, true) })
-      .bindPopup(
-        `<div class="popup-content"><b>Öresundståg</b><br>På väg mot: ${p.destination}<br>` +
-        `<span style="opacity:0.7;font-size:0.85em;">(beräknad position enligt tidtabell — ingen realtidsdata finns för denna linje)</span></div>`,
-        { offset: [0, -12], autoPan: false }
-      )
-      .addTo(simulatedOresundstagLayer);
+  const active = computeSimulatedOresundstagPositions();
+  const activeTripIds = new Set();
+  for (const p of active) {
+    activeTripIds.add(p.tripId);
+    const existing = simulatedOresundstagMarkersByTripId.get(p.tripId);
+    if (existing) {
+      existing.setLatLng([p.lat, p.lon]);
+    } else {
+      const marker = L.marker([p.lat, p.lon], { icon: makeDivIcon(SIMULATED_ORESUNDSTAG_TRIPINFO, true) })
+        .bindPopup(
+          `<div class="popup-content"><b>Öresundståg</b><br>På väg mot: ${p.destination}<br>` +
+          `<span style="opacity:0.7;font-size:0.85em;">(beräknad position enligt tidtabell — ingen realtidsdata finns för denna linje)</span></div>`,
+          { offset: [0, -12], autoPan: false }
+        )
+        .addTo(simulatedOresundstagLayer);
+      simulatedOresundstagMarkersByTripId.set(p.tripId, marker);
+    }
+  }
+  for (const [tripId, marker] of simulatedOresundstagMarkersByTripId) {
+    if (!activeTripIds.has(tripId)) {
+      simulatedOresundstagLayer.removeLayer(marker);
+      simulatedOresundstagMarkersByTripId.delete(tripId);
+    }
   }
 }
-setInterval(updateSimulatedOresundstag, 15000);
+function oresundstagAnimationLoop() {
+  updateSimulatedOresundstag();
+  requestAnimationFrame(oresundstagAnimationLoop);
+}
 
 // ============================================================
 // Simulerade färjor — rent bakgrundselement, samma idé som
@@ -1834,7 +1915,11 @@ async function loadRouteColors() {
     const scheduleData = await scheduleRes.json();
     oresundstagSchedule = scheduleData.trips;
     console.log(`Laddade Öresundståg-tidtabell: ${oresundstagSchedule.length} resor`);
-    updateSimulatedOresundstag();
+    // Behöver den riktiga spårgeometrin också, så simuleringen kan
+    // följa den faktiska kurvan istället för raka linjer mellan
+    // hållplatserna.
+    await ensureRouteShapesLoaded();
+    oresundstagAnimationLoop();
   } catch (err) {
     console.warn("Kunde inte ladda Öresundståg-tidtabellen (finns filen ännu inte?):", err);
   }
