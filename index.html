@@ -1351,6 +1351,7 @@ map.on("zoomend", scheduleRenderVisibleBusStops);
 // heller server-sidan — se kommentar där filen byggs.
 // ============================================================
 let oresundstagSchedule = [];
+let oresundstagShapesById = {};
 const simulatedOresundstagLayer = L.layerGroup().addTo(map);
 // En "låtsas"-tripInfo som återanvänder exakt samma ikonstil som
 // riktiga Öresundståg-fordon (samma färg, samma rälsutseende).
@@ -1413,7 +1414,11 @@ function computeSimulatedOresundstagPositions() {
     const stops = trip.stops;
     const first = stops[0], last = stops[stops.length - 1];
     if (refSeconds < first.dep || refSeconds > last.arr) continue;
-    const routeShape = routeShapesCache && routeShapesCache[trip.routeId];
+    // Just den här SPECIFIKA resans egen sträckgeometri — inte en
+    // gemensam gissning för hela linjenumret (samma linjenummer kan
+    // täcka flera helt olika fysiska rutter, t.ex. vissa till
+    // Köpenhamn och andra vidare till Göteborg).
+    const shapePoints = trip.shapeId ? oresundstagShapesById[trip.shapeId] : null;
     for (let i = 0; i < stops.length - 1; i++) {
       const a = stops[i], b = stops[i + 1];
       if (refSeconds < a.dep || refSeconds > b.arr) continue;
@@ -1423,12 +1428,12 @@ function computeSimulatedOresundstagPositions() {
       // Följ den RIKTIGA spårkurvan mellan de två hållplatserna, inte
       // en rak linje — hittar närmaste punkt på sträckan till vardera
       // hållplats, och interpolerar bara i det avsnittet däremellan.
-      if (routeShape && routeShape.points && routeShape.points.length > 1) {
-        const idxA = findNearestPointIndex(routeShape.points, [a.lat, a.lon]);
-        const idxB = findNearestPointIndex(routeShape.points, [b.lat, b.lon]);
+      if (shapePoints && shapePoints.length > 1) {
+        const idxA = findNearestPointIndex(shapePoints, [a.lat, a.lon]);
+        const idxB = findNearestPointIndex(shapePoints, [b.lat, b.lon]);
         const subPath = idxA <= idxB
-          ? routeShape.points.slice(idxA, idxB + 1)
-          : routeShape.points.slice(idxB, idxA + 1).reverse();
+          ? shapePoints.slice(idxA, idxB + 1)
+          : shapePoints.slice(idxB, idxA + 1).reverse();
         if (subPath.length >= 2) {
           const pt = pointAlongPolylineFraction(subPath, frac);
           lat = pt[0];
@@ -1914,11 +1919,8 @@ async function loadRouteColors() {
     if (!scheduleRes.ok) throw new Error(`oresundstag_schedule.json: HTTP ${scheduleRes.status}`);
     const scheduleData = await scheduleRes.json();
     oresundstagSchedule = scheduleData.trips;
-    console.log(`Laddade Öresundståg-tidtabell: ${oresundstagSchedule.length} resor`);
-    // Behöver den riktiga spårgeometrin också, så simuleringen kan
-    // följa den faktiska kurvan istället för raka linjer mellan
-    // hållplatserna.
-    await ensureRouteShapesLoaded();
+    oresundstagShapesById = scheduleData.shapes || {};
+    console.log(`Laddade Öresundståg-tidtabell: ${oresundstagSchedule.length} resor, ${Object.keys(oresundstagShapesById).length} sträckgeometrier`);
     oresundstagAnimationLoop();
   } catch (err) {
     console.warn("Kunde inte ladda Öresundståg-tidtabellen (finns filen ännu inte?):", err);
