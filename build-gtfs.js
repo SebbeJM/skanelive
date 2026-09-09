@@ -251,6 +251,7 @@ async function buildGtfsArtifacts() {
   const headsignByTripId = new Map();
   const shapeIdsByRoute = new Map();
   const serviceIdByTripId = new Map();
+  const shapeIdByTripId = new Map();
   // Ett exempel-trip_id per shape_id, för att kunna slå upp en
   // representativ hållplatslista senare (se "Se linje"-datan nedan).
   const tripIdByShapeId = new Map();
@@ -264,6 +265,7 @@ async function buildGtfsArtifacts() {
     if (tripId && routeId) routeIdByTripId.set(tripId, routeId);
     if (tripId && headsign) headsignByTripId.set(tripId, headsign);
     if (tripId && serviceId) serviceIdByTripId.set(tripId, serviceId);
+    if (tripId && shapeId) shapeIdByTripId.set(tripId, shapeId);
     if (routeId && shapeId) {
       if (!shapeIdsByRoute.has(routeId)) shapeIdsByRoute.set(routeId, new Set());
       shapeIdsByRoute.get(routeId).add(shapeId);
@@ -496,6 +498,12 @@ async function buildGtfsArtifacts() {
   // bara vad den vanliga veckodagen säger. Detta är en känd, accepterad
   // begränsning för att hålla det hela så enkelt som möjligt.
   const oresundstagSchedule = [];
+  // Delad, avdubblad lista med sträckgeometrier — flera resor delar
+  // ofta samma fysiska shape_id, så vi sparar varje unik sträcka bara
+  // EN gång och låter resorna referera till den, istället för att
+  // upprepa punkterna i varje enskild resa (skulle annars bli en
+  // jättestor fil).
+  const oresundstagShapesById = {};
   for (const [tripId, routeId] of routeIdByTripId) {
     const routeInfo = routesById.get(routeId);
     if (!routeInfo || routeInfo.brand !== "oresundstag") continue;
@@ -515,9 +523,23 @@ async function buildGtfsArtifacts() {
       stops.push({ name: s.name, lat: s.lat, lon: s.lon, arr, dep });
     }
     if (stops.length < 2) continue;
-    oresundstagSchedule.push({ tripId, validYesterday, validToday, validTomorrow, stops });
+    // Just DEN HÄR resans egen sträckgeometri — inte en gemensam
+    // "bästa gissning" för hela linjenumret, eftersom samma
+    // linjenummer (t.ex. 804) kan täcka helt olika fysiska rutter
+    // (vissa slutar vid Köpenhamn, andra fortsätter till Göteborg).
+    const shapeId = shapeIdByTripId.get(tripId);
+    const shapePoints = shapeId ? shapePointsById.get(shapeId) : null;
+    if (shapeId && shapePoints && shapePoints.length >= 2 && !oresundstagShapesById[shapeId]) {
+      oresundstagShapesById[shapeId] = shapePoints;
+    }
+    oresundstagSchedule.push({
+      tripId,
+      shapeId: shapePoints ? shapeId : null,
+      validYesterday, validToday, validTomorrow,
+      stops,
+    });
   }
-  console.log(`Öresundståg-tidtabell: ${oresundstagSchedule.length} resor med fullständig schemadata (referensdatum: ${TODAY_YYYYMMDD})`);
+  console.log(`Öresundståg-tidtabell: ${oresundstagSchedule.length} resor med fullständig schemadata (referensdatum: ${TODAY_YYYYMMDD}), ${Object.keys(oresundstagShapesById).length} unika sträckgeometrier`);
 
   // ============================================================
   // Bygg de tre färdiga artefakterna
@@ -630,12 +652,22 @@ function minDistanceToPointMeters(points, target) {
     const shapeIds = shapeIdsByRoute.get(routeId);
     if (!shapeIds || shapeIds.size === 0) continue;
     let bestShapeId = null, bestPoints = null;
+    // För Öresundståg specifikt: samma kvalitetskontroll som
+    // rail_lines.json använder (måste passera nära Kastrup) — annars
+    // kunde en av de bristfälliga/raka sträckorna råka bli "bäst" här
+    // bara för att den har flest punkter, trots att den inte alls
+    // följer den riktiga rutten. Bland de sträckor som klarar kollen
+    // väljs sedan den mest detaljerade.
+    const isOresundstag = routeInfo.brand === "oresundstag";
+    let bestIsGood = false;
     for (const shapeId of shapeIds) {
       const points = shapePointsById.get(shapeId);
       if (!points) continue;
-      if (!bestPoints || points.length > bestPoints.length) {
+      const isGood = !isOresundstag || (kastrupCoords && minDistanceToPointMeters(points, kastrupCoords) <= 1500);
+      if (!bestPoints || (isGood && !bestIsGood) || (isGood === bestIsGood && points.length > bestPoints.length)) {
         bestShapeId = shapeId;
         bestPoints = points;
+        bestIsGood = isGood;
       }
     }
     if (!bestPoints || bestPoints.length < 2) continue;
@@ -671,7 +703,7 @@ function minDistanceToPointMeters(points, target) {
   fs.writeFileSync(path.join(OUTPUT_DIR, "train_stations.json"), JSON.stringify({ builtAt, stations: trainStations }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "bus_stops.json"), JSON.stringify({ builtAt, stops: busStops }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "route_shapes.json"), JSON.stringify({ builtAt, routes: routeShapes }));
-  fs.writeFileSync(path.join(OUTPUT_DIR, "oresundstag_schedule.json"), JSON.stringify({ builtAt, trips: oresundstagSchedule }));
+  fs.writeFileSync(path.join(OUTPUT_DIR, "oresundstag_schedule.json"), JSON.stringify({ builtAt, trips: oresundstagSchedule, shapes: oresundstagShapesById }));
 
   return {
     tripCount: Object.keys(tripLookup).length,
