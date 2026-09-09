@@ -290,10 +290,60 @@ async function buildGtfsArtifacts() {
         friday: cols[idx("friday")] === "1",
         saturday: cols[idx("saturday")] === "1",
         sunday: cols[idx("sunday")] === "1",
+        startDate: (cols[idx("start_date")] || "").trim(),
+        endDate: (cols[idx("end_date")] || "").trim(),
       });
     });
   }
   console.log(`calendar.txt: ${serviceDaysById.size} scheman`);
+
+  // ---- calendar_dates.txt ---- (undantag för enskilda datum — vissa
+  // linjer, det visade sig gälla Öresundståg specifikt, har ALLA
+  // veckodagar satta till 0 i calendar.txt och styr istället helt via
+  // enskilda datum här. Läser bara in undantag, inte hela filen som
+  // en tidtabell för året — se avgränsningen till gårdag/idag/morgondag
+  // längre ner.)
+  const calendarDatesByService = new Map(); // service_id -> Map<"YYYYMMDD", "1"|"2">
+  const calendarDatesText = await extractFileAsText(bytes, centralDir, "calendar_dates.txt");
+  if (calendarDatesText) {
+    forEachCsvRow(calendarDatesText, (cols, idx) => {
+      const serviceId = (cols[idx("service_id")] || "").trim();
+      const date = (cols[idx("date")] || "").trim();
+      const exceptionType = (cols[idx("exception_type")] || "").trim();
+      if (!serviceId || !date) return;
+      if (!calendarDatesByService.has(serviceId)) calendarDatesByService.set(serviceId, new Map());
+      calendarDatesByService.get(serviceId).set(date, exceptionType);
+    });
+  }
+  console.log(`calendar_dates.txt: undantag för ${calendarDatesByService.size} scheman`);
+
+  // Avgör om ett service_id är giltigt för ett SPECIFIKT datum
+  // (YYYYMMDD-sträng) — kombinerar calendar.txt (veckodag + datumspann)
+  // med calendar_dates.txt-undantagen ovanpå.
+  const WEEKDAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  function isServiceValidOnDate(serviceId, yyyymmdd) {
+    const exceptions = calendarDatesByService.get(serviceId);
+    if (exceptions && exceptions.has(yyyymmdd)) {
+      return exceptions.get(yyyymmdd) === "1";
+    }
+    const days = serviceDaysById.get(serviceId);
+    if (!days) return false;
+    if (days.startDate && yyyymmdd < days.startDate) return false;
+    if (days.endDate && yyyymmdd > days.endDate) return false;
+    const y = parseInt(yyyymmdd.slice(0, 4), 10), mo = parseInt(yyyymmdd.slice(4, 6), 10) - 1, d = parseInt(yyyymmdd.slice(6, 8), 10);
+    const weekday = WEEKDAY_NAMES[new Date(Date.UTC(y, mo, d)).getUTCDay()];
+    return !!days[weekday];
+  }
+  // Bara gårdagens, dagens och morgondagens datum behövs — byggjobbet
+  // körs ändå dagligen, så vi slipper räkna ut hela årets giltighet.
+  function yyyymmddOffset(offsetDays) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + offsetDays);
+    return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+  }
+  const YESTERDAY_YYYYMMDD = yyyymmddOffset(-1);
+  const TODAY_YYYYMMDD = yyyymmddOffset(0);
+  const TOMORROW_YYYYMMDD = yyyymmddOffset(1);
 
   // ---- shapes.txt ----
   const shapePointsById = new Map();
@@ -450,8 +500,11 @@ async function buildGtfsArtifacts() {
     const routeInfo = routesById.get(routeId);
     if (!routeInfo || routeInfo.brand !== "oresundstag") continue;
     const serviceId = serviceIdByTripId.get(tripId);
-    const days = serviceId ? serviceDaysById.get(serviceId) : null;
-    if (!days) continue;
+    if (!serviceId) continue;
+    const validYesterday = isServiceValidOnDate(serviceId, YESTERDAY_YYYYMMDD);
+    const validToday = isServiceValidOnDate(serviceId, TODAY_YYYYMMDD);
+    const validTomorrow = isServiceValidOnDate(serviceId, TOMORROW_YYYYMMDD);
+    if (!validYesterday && !validToday && !validTomorrow) continue;
     const rawStops = stopSeqByTripId.get(tripId);
     if (!rawStops || rawStops.length < 2) continue;
     const sorted = [...rawStops].sort((a, b) => a.seq - b.seq);
@@ -462,9 +515,9 @@ async function buildGtfsArtifacts() {
       stops.push({ name: s.name, lat: s.lat, lon: s.lon, arr, dep });
     }
     if (stops.length < 2) continue;
-    oresundstagSchedule.push({ tripId, days, stops });
+    oresundstagSchedule.push({ tripId, validYesterday, validToday, validTomorrow, stops });
   }
-  console.log(`Öresundståg-tidtabell: ${oresundstagSchedule.length} resor med fullständig schemadata`);
+  console.log(`Öresundståg-tidtabell: ${oresundstagSchedule.length} resor med fullständig schemadata (referensdatum: ${TODAY_YYYYMMDD})`);
 
   // ============================================================
   // Bygg de tre färdiga artefakterna
