@@ -1483,6 +1483,16 @@ function updateSimulatedOresundstag() {
     }
   }
 }
+// Ikonens storlek fryses vid SKAPANDET (baserat på dåvarande
+// zoomnivå) eftersom vi bara flyttar markörer för mjuk rörelse, utan
+// att rita om ikonen varje bildruta. Uppdaterar därför storleken på
+// alla simulerade tåg specifikt när man zoomar, så de inte hamnar i
+// olika storlekar beroende på när de råkade skapas.
+map.on("zoomend", () => {
+  for (const marker of simulatedOresundstagMarkersByTripId.values()) {
+    marker.setIcon(makeDivIcon(SIMULATED_ORESUNDSTAG_TRIPINFO, true));
+  }
+});
 function oresundstagAnimationLoop() {
   updateSimulatedOresundstag();
   requestAnimationFrame(oresundstagAnimationLoop);
@@ -2035,8 +2045,8 @@ async function loadVisitorStats() {
     const res = await fetch(`${PROXY_URL}/counter`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    todayEl.textContent = (data.today ?? 0).toLocaleString("sv-SE");
-    monthEl.textContent = (data.month ?? 0).toLocaleString("sv-SE");
+    todayEl.textContent = data.today == null ? "–" : data.today.toLocaleString("sv-SE");
+    monthEl.textContent = data.month == null ? "–" : data.month.toLocaleString("sv-SE");
   } catch (err) {
     console.warn("Kunde inte hämta besökssiffror:", err.message);
     todayEl.textContent = "–";
