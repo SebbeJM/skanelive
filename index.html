@@ -1695,6 +1695,7 @@ function renderPopupHtml(baseHtml, pinned, id) {
 function lineLabelFor(tripInfo, displayName) {
   if (tripInfo && tripInfo.brand === "oresundstag") return `Öresundståg ${displayName}`;
   if (tripInfo && tripInfo.brand === "pagatag") return `Pågatåg ${displayName}`;
+  if (tripInfo && tripInfo.brand === "skaneexpressen") return `Skåneexpressen ${displayName}`;
   return `Linje ${displayName}`;
 }
 function iconHtml(tripInfo, moving) {
