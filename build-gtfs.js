@@ -127,12 +127,17 @@ function classifyColorForRoute(shortName, longName, routeType) {
   if (name.includes("öresundståg")) return "a3a9ad";
   if (isRailRouteType(routeType)) return "645fa2";
   if (name.includes("pågatåg")) return "645fa2";
+  // Kollar hela namnet (både kort och långt), inte bara det korta
+  // linjenumret — Skånetrafikens data lagrar troligen "SkåneExpressen"
+  // i det LÅNGA beskrivande namnet (typ "SkåneExpressen 5: Lund-
+  // Simrishamn"), medan själva linjenumret bara är en vanlig kort
+  // siffra ("5") som annars skulle råka tolkas som en stadsbusslinje.
+  if (name.includes("skåneexpressen")) return "f9a825";
   const trimmed = (shortName || "").trim();
   if (/^\d+$/.test(trimmed)) {
     if (trimmed.length <= 2) return "2e7d32";
     if (trimmed.length === 3) return "f9a825";
   }
-  if (/^skåneexpressen/i.test(trimmed)) return "f9a825";
   return null;
 }
 
