@@ -373,29 +373,30 @@ async function buildGtfsArtifacts() {
   }
   console.log(`shapes.txt: ${shapePointsById.size} körvägar (förenklade)`);
 
-  let skaneexpressenByNameCount = 0;
+  // De nio riktiga SkåneExpressen-linjerna identifieras nu via sina
+  // EXAKTA, unika route_id (hittade genom diagnostiken, bekräftade
+  // mot Skånetrafikens egen sträckbeskrivning) — vattentätt, ingen
+  // risk att träffa fel linjer oavsett vilket nummer de råkar dela
+  // med en vanlig stadsbuss eller lokal "NO"-linje.
+  const SKANEEXPRESSEN_ROUTE_IDS = new Set([
+    "9011012040100000", // 1: Kristianstad-Malmö
+    "9011012040200000", // 2: Hörby-Lund
+    "9011012040300000", // 3: Kristianstad-Simrishamn
+    "9011012040400000", // 4: Ystad-Brösarp
+    "9011012040500000", // 5: Lund-Simrishamn
+    "9011012040800000", // 8: Malmö-Veberöd-Sjöbo
+    "9011012041000000", // 10: Örkelljunga-Helsingborg
+    "9011012041100000", // 11: Höganäs-Helsingborg
+    "9011012041500000", // 15: Malmö-Skanör
+  ]);
+  let skaneexpressenCount = 0;
   for (const [routeId, info] of routesById) {
-    // Textmatchning (om ordet råkar finnas i data) — märks oavsett
-    // vilken colorSource routen redan har. Avståndsbaserad gissning
-    // testades men var för aggressiv (fångade in vanliga stadsbussar
-    // felaktigt, t.ex. linje 9 i Malmö) — borttagen igen.
-    const nameCombined = `${info.shortName} ${info.longName || ""}`.toLowerCase();
-    if (nameCombined.includes("skåneexpressen")) {
-      info.brand = "skaneexpressen";
-      skaneexpressenByNameCount++;
-    }
+    if (!SKANEEXPRESSEN_ROUTE_IDS.has(routeId)) continue;
+    info.brand = "skaneexpressen";
+    info.color = "f9a825";
+    skaneexpressenCount++;
   }
-  console.log(`${skaneexpressenByNameCount} linjer identifierade som SkåneExpressen via namnet`);
-
-  // RENDIAGNOSTIK — hittar route_id för de kända SkåneExpressen-
-  // siffrorna (1,2,3,4,5,8,10,11,15 enligt Skånetrafikens egen sida,
-  // december 2025), så man kan se exakt vilka route_id det gäller om
-  // man vill hårdkoda dem specifikt utöver reglerna ovan.
-  const KNOWN_SKANEEXPRESSEN_NUMBERS = new Set(["1", "2", "3", "4", "5", "8", "10", "11", "15"]);
-  for (const [routeId, info] of routesById) {
-    if (!KNOWN_SKANEEXPRESSEN_NUMBERS.has((info.shortName || "").trim())) continue;
-    console.log(`DIAGNOS möjlig SkåneExpressen: route_id=${routeId}, shortName="${info.shortName}", longName="${info.longName}", nuvarande brand=${info.brand || "(ingen)"}`);
-  }
+  console.log(`${skaneexpressenCount} av 9 kända SkåneExpressen-linjer hittade och märkta via exakt route_id`);
 
   // ---- stops.txt ----
   const stopsById = new Map();
