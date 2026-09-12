@@ -397,7 +397,18 @@ async function buildGtfsArtifacts() {
     return len;
   }
   let reclassifiedLongRouteCount = 0;
+  let skaneexpressenByNameCount = 0;
   for (const [routeId, info] of routesById) {
+    // Textmatchning (om ordet råkar finnas i data) — märks oavsett
+    // vilken colorSource routen redan har.
+    const nameCombined = `${info.shortName} ${info.longName || ""}`.toLowerCase();
+    if (nameCombined.includes("skåneexpressen")) {
+      info.brand = "skaneexpressen";
+      skaneexpressenByNameCount++;
+      continue;
+    }
+    // Avståndsregeln — bara för linjer som ännu bara klassats som
+    // "stadsbuss" via tumregeln (aldrig officiella/manuella färger).
     if (info.colorSource !== "heuristic" || info.color !== "2e7d32") continue;
     const shapeIds = shapeIdsByRoute.get(routeId);
     if (!shapeIds) continue;
@@ -410,10 +421,21 @@ async function buildGtfsArtifacts() {
     }
     if (maxLength > LONG_ROUTE_THRESHOLD_M) {
       info.color = "f9a825";
+      info.brand = "skaneexpressen";
       reclassifiedLongRouteCount++;
     }
   }
-  console.log(`${reclassifiedLongRouteCount} "stadsbussar" omklassade till regionbuss-färg baserat på sträckans längd (över ${LONG_ROUTE_THRESHOLD_M / 1000}km)`);
+  console.log(`${skaneexpressenByNameCount} linjer identifierade som SkåneExpressen via namnet, ${reclassifiedLongRouteCount} YTTERLIGARE via sträckans längd (över ${LONG_ROUTE_THRESHOLD_M / 1000}km)`);
+
+  // RENDIAGNOSTIK — hittar route_id för de kända SkåneExpressen-
+  // siffrorna (1,2,3,4,5,8,10,11,15 enligt Skånetrafikens egen sida,
+  // december 2025), så man kan se exakt vilka route_id det gäller om
+  // man vill hårdkoda dem specifikt utöver reglerna ovan.
+  const KNOWN_SKANEEXPRESSEN_NUMBERS = new Set(["1", "2", "3", "4", "5", "8", "10", "11", "15"]);
+  for (const [routeId, info] of routesById) {
+    if (!KNOWN_SKANEEXPRESSEN_NUMBERS.has((info.shortName || "").trim())) continue;
+    console.log(`DIAGNOS möjlig SkåneExpressen: route_id=${routeId}, shortName="${info.shortName}", longName="${info.longName}", nuvarande brand=${info.brand || "(ingen)"}`);
+  }
 
   // ---- stops.txt ----
   const stopsById = new Map();
