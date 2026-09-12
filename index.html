@@ -186,6 +186,15 @@
   .leaflet-container.map-moving .vehicle-marker {
     transition: none !important;
   }
+  /* Popup-rutor (och deras hover-liknande "stannar kvar"-läge) följer
+     nu fordonets mjuka glidning istället för att hoppa direkt till
+     den nya positionen — samma övergång som själva ikonen. */
+  .leaflet-popup {
+    transition: transform 6.5s linear;
+  }
+  .leaflet-container.map-moving .leaflet-popup {
+    transition: none !important;
+  }
   @keyframes vehicle-jitter {
     0%   { transform: translate(0, 0); }
     20%  { transform: translate(0.18px, -0.12px); }
@@ -1493,8 +1502,17 @@ map.on("zoomend", () => {
     marker.setIcon(makeDivIcon(SIMULATED_ORESUNDSTAG_TRIPINFO, true));
   }
 });
-function oresundstagAnimationLoop() {
-  updateSimulatedOresundstag();
+// Görs bara var ~200ms (inte varje bildruta) — tåg/färjor rör sig
+// långsamt så det behövs inte högre precision, och det frigör CPU för
+// annat (t.ex. pekskärmspanorering) under tiden. Fortfarande via
+// requestAnimationFrame (inte setInterval) så den pausar automatiskt
+// när fliken inte är synlig.
+let lastOresundstagUpdateTime = 0;
+function oresundstagAnimationLoop(now) {
+  if (!lastOresundstagUpdateTime || now - lastOresundstagUpdateTime >= 200) {
+    updateSimulatedOresundstag();
+    lastOresundstagUpdateTime = now;
+  }
   requestAnimationFrame(oresundstagAnimationLoop);
 }
 
@@ -1646,8 +1664,12 @@ function updateFerries() {
     }
   }
 }
-function ferryAnimationLoop() {
-  updateFerries();
+let lastFerryUpdateTime = 0;
+function ferryAnimationLoop(now) {
+  if (!lastFerryUpdateTime || now - lastFerryUpdateTime >= 200) {
+    updateFerries();
+    lastFerryUpdateTime = now;
+  }
   requestAnimationFrame(ferryAnimationLoop);
 }
 // Positionen är redan en exakt matematisk funktion av klockan (ingen
@@ -1663,8 +1685,8 @@ function shouldShowLabels() {
   return map.getZoom() >= ZOOM_LABEL_THRESHOLD;
 }
 function iconSizeForZoom() {
-  const veryMinZoom = 5, veryMinSize = 4; // halva storleken vid mycket utzoomning
-  const minSize = 7, maxSize = 22, minZoom = 8, maxZoom = 14; // mindre ikoner tills man är lika inzoomad som ZOOM_LABEL_THRESHOLD
+  const veryMinZoom = 5, veryMinSize = 2; // ännu mindre vid mycket utzoomning (nästan hälften av förut)
+  const minSize = 4, maxSize = 22, minZoom = 8, maxZoom = 14; // oförändrad maxstorlek (när texten syns)
   const z = map.getZoom();
   if (z <= veryMinZoom) return veryMinSize;
   if (z < minZoom) {
@@ -1776,9 +1798,10 @@ function updateVehicles(entities) {
     seenIds.add(id);
     const destination = (tripInfo && tripInfo.destination) || "";
     const speed = vp.position.speed;
+    const lineColor = (tripInfo && tripInfo.color) ? `#${tripInfo.color}` : "inherit";
     const popupHtml = `
       <div class="popup-content">
-        <b>${lineLabelFor(tripInfo, displayName)}</b>
+        <b style="color: ${lineColor};">${lineLabelFor(tripInfo, displayName)}</b>
         ${destination ? `På väg mot: ${destination}<br>` : ""}
         Hastighet: ${speed != null ? Math.round(speed * 3.6) + " km/h" : "okänd"}
       </div>
@@ -1799,6 +1822,8 @@ function updateVehicles(entities) {
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
       const el = entry.marker.getElement();
       if (el) el.style.transitionDuration = `${clamped}ms`;
+      const popupEl = entry.popup.getElement();
+      if (popupEl) popupEl.style.transitionDuration = `${clamped}ms`;
       entry.lastUpdateTime = now;
       entry.popupBaseHtml = popupHtml;
       entry.id = id;
