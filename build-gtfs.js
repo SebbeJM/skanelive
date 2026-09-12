@@ -373,59 +373,19 @@ async function buildGtfsArtifacts() {
   }
   console.log(`shapes.txt: ${shapePointsById.size} körvägar (förenklade)`);
 
-  // Vissa "stadsbussar" (kort, 1-2-siffrigt linjenummer, färgsatta via
-  // tumregeln ovan) kör i själva verket en mycket lång sträcka mellan
-  // olika städer — typiskt för SkåneExpressen och liknande långlinjer,
-  // oavsett om ordet "skåneexpressen" råkar finnas med i GTFS-datans
-  // namnfält eller inte. Riktiga stadsbussar håller sig inom en stad.
-  // Använder därför sträckans FAKTISKA längd som en mer pålitlig
-  // signal, och påverkar bara linjer som redan klassats via tumregeln
-  // (aldrig officiella/manuella färger) — en stadsbuss med samma
-  // nummer i en annan stad har ju fortfarande en kort sträcka, och
-  // påverkas därför inte.
-  const LONG_ROUTE_THRESHOLD_M = 15000;
-  function polylineTotalLengthMeters(points) {
-    let len = 0;
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i], b = points[i + 1];
-      const latRef = (a[0] + b[0]) / 2;
-      const cosLat = Math.cos((latRef * Math.PI) / 180);
-      const dx = (b[1] - a[1]) * cosLat * 111320;
-      const dy = (b[0] - a[0]) * 111320;
-      len += Math.hypot(dx, dy);
-    }
-    return len;
-  }
-  let reclassifiedLongRouteCount = 0;
   let skaneexpressenByNameCount = 0;
   for (const [routeId, info] of routesById) {
     // Textmatchning (om ordet råkar finnas i data) — märks oavsett
-    // vilken colorSource routen redan har.
+    // vilken colorSource routen redan har. Avståndsbaserad gissning
+    // testades men var för aggressiv (fångade in vanliga stadsbussar
+    // felaktigt, t.ex. linje 9 i Malmö) — borttagen igen.
     const nameCombined = `${info.shortName} ${info.longName || ""}`.toLowerCase();
     if (nameCombined.includes("skåneexpressen")) {
       info.brand = "skaneexpressen";
       skaneexpressenByNameCount++;
-      continue;
-    }
-    // Avståndsregeln — bara för linjer som ännu bara klassats som
-    // "stadsbuss" via tumregeln (aldrig officiella/manuella färger).
-    if (info.colorSource !== "heuristic" || info.color !== "2e7d32") continue;
-    const shapeIds = shapeIdsByRoute.get(routeId);
-    if (!shapeIds) continue;
-    let maxLength = 0;
-    for (const shapeId of shapeIds) {
-      const points = shapePointsById.get(shapeId);
-      if (!points || points.length < 2) continue;
-      const len = polylineTotalLengthMeters(points);
-      if (len > maxLength) maxLength = len;
-    }
-    if (maxLength > LONG_ROUTE_THRESHOLD_M) {
-      info.color = "f9a825";
-      info.brand = "skaneexpressen";
-      reclassifiedLongRouteCount++;
     }
   }
-  console.log(`${skaneexpressenByNameCount} linjer identifierade som SkåneExpressen via namnet, ${reclassifiedLongRouteCount} YTTERLIGARE via sträckans längd (över ${LONG_ROUTE_THRESHOLD_M / 1000}km)`);
+  console.log(`${skaneexpressenByNameCount} linjer identifierade som SkåneExpressen via namnet`);
 
   // RENDIAGNOSTIK — hittar route_id för de kända SkåneExpressen-
   // siffrorna (1,2,3,4,5,8,10,11,15 enligt Skånetrafikens egen sida,
