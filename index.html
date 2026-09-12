@@ -186,15 +186,6 @@
   .leaflet-container.map-moving .vehicle-marker {
     transition: none !important;
   }
-  /* Popup-rutor (och deras hover-liknande "stannar kvar"-läge) följer
-     nu fordonets mjuka glidning istället för att hoppa direkt till
-     den nya positionen — samma övergång som själva ikonen. */
-  .leaflet-popup {
-    transition: transform 6.5s linear;
-  }
-  .leaflet-container.map-moving .leaflet-popup {
-    transition: none !important;
-  }
   @keyframes vehicle-jitter {
     0%   { transform: translate(0, 0); }
     20%  { transform: translate(0.18px, -0.12px); }
@@ -1679,6 +1670,33 @@ function ferryAnimationLoop(now) {
 ferryAnimationLoop();
 
 const markers = new Map();
+// Animerar en popups position bildruta för bildruta (garanterat mjukt,
+// oavsett hur Leaflet internt hanterar CSS-övergångar på sina egna
+// popup-element) — samma glidningstid som fordonets egen ikon.
+// Varje anrop avbryter en eventuellt redan pågående animation för
+// samma popup, så de aldrig krockar med varandra.
+const popupAnimationFrames = new WeakMap();
+function animatePopupTo(popup, toLat, toLon, durationMs) {
+  const existingFrame = popupAnimationFrames.get(popup);
+  if (existingFrame) cancelAnimationFrame(existingFrame);
+  const from = popup.getLatLng();
+  const fromLat = from.lat, fromLon = from.lng;
+  const startTime = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - startTime) / durationMs);
+    popup.setLatLng([
+      fromLat + (toLat - fromLat) * t,
+      fromLon + (toLon - fromLon) * t,
+    ]);
+    if (t < 1) {
+      popupAnimationFrames.set(popup, requestAnimationFrame(step));
+    } else {
+      popupAnimationFrames.delete(popup);
+    }
+  }
+  popupAnimationFrames.set(popup, requestAnimationFrame(step));
+}
+
 let staticDataLoaded = false;
 const ZOOM_LABEL_THRESHOLD = 14; // höjt från 12 — kräver mer inzoomning innan linjenummer visas
 function shouldShowLabels() {
@@ -1822,12 +1840,10 @@ function updateVehicles(entities) {
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
       const el = entry.marker.getElement();
       if (el) el.style.transitionDuration = `${clamped}ms`;
-      const popupEl = entry.popup.getElement();
-      if (popupEl) popupEl.style.transitionDuration = `${clamped}ms`;
       entry.lastUpdateTime = now;
       entry.popupBaseHtml = popupHtml;
       entry.id = id;
-      if (map.hasLayer(entry.popup)) entry.popup.setLatLng([lat, lon]);
+      if (map.hasLayer(entry.popup)) animatePopupTo(entry.popup, lat, lon, clamped);
       entry.marker.setLatLng([lat, lon]);
       if (followedId !== id) {
         entry.popup.setContent(renderPopupHtml(popupHtml, entry.pinned, id));
