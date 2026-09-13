@@ -1841,7 +1841,7 @@ function iconHtml(tripInfo, moving, rotationDeg) {
   // Öresundståg (alltid den simulerade markeringen, riktig realtidsdata
   // finns aldrig) får sin officiella symbol istället för textetiketten.
   const isOresundstag = tripInfo && tripInfo.brand === "oresundstag";
-  const isTestRotated = tripInfo && tripInfo.line === TEST_ROTATED_ICON_LINE && rotationDeg != null && bg;
+  const isTestRotated = tripInfo && tripInfo.line === TEST_ROTATED_ICON_LINE && rotationDeg != null && bg && shouldShowLabels();
   if (isTestRotated) {
     return busRectangleIconHtml(label, bg, fg, size, fontSize, rotationDeg);
   }
@@ -1944,12 +1944,19 @@ function updateVehicles(entities) {
       // DOM-elementet (inte via setIcon, som skulle skapa ett nytt
       // element och förstöra CSS-övergången) — så den kortaste-vägen-
       // rotationen animeras mjukt precis som positionen.
-      if (displayName === TEST_ROTATED_ICON_LINE && bearing != null && el) {
+      if (displayName === TEST_ROTATED_ICON_LINE && bearing != null && el && shouldShowLabels()) {
         const inner = el.querySelector(".bus-rect-inner");
         if (inner) {
           entry.rotationDeg = shortestRotationTarget(entry.rotationDeg ?? bearing, bearing);
           inner.style.transitionDuration = `${clamped}ms`;
           inner.style.transform = `rotate(${entry.rotationDeg}deg)`;
+        } else {
+          // Ikonen skapades som en cirkel (troligen saknades bearing-data
+          // just DÅ) — men nu har vi giltig bearing, så bygg om den till
+          // en rektangel direkt istället för att förbli en cirkel för
+          // alltid.
+          entry.rotationDeg = bearing;
+          entry.marker.setIcon(makeDivIcon(tripInfo, isMoving, entry.rotationDeg));
         }
       }
       entry.lastUpdateTime = now;
