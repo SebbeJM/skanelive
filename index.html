@@ -208,11 +208,7 @@
   .bus-rect-label {
     font-weight: 600;
     white-space: nowrap;
-    text-shadow:
-      -1px -1px 0 #000,
-       1px -1px 0 #000,
-      -1px  1px 0 #000,
-       1px  1px 0 #000;
+    color: #000000;
   }
   @keyframes vehicle-jitter {
     0%   { transform: translate(0, 0); }
@@ -1814,15 +1810,20 @@ function shortestRotationTarget(currentDeg, targetBearing) {
 // Texten löper längs rektangelns LÅNGA sida (bättre plats för längre
 // nummer som "177"), men vänder sig 180° istället för att bli upp och
 // ner om rotationen annars skulle göra det.
-function busRectangleIconHtml(label, bg, fg, size, fontSize, rotationDeg) {
-  const w = Math.round(size * 0.62), h = size;
+function busRectangleIconHtml(label, bg, size, fontSize, rotationDeg) {
+  // Bredare och tydligt längre än bred (mer buss-likt) — och den
+  // yttre "burken" (bus-rect-outer) är extra rymlig (diagonalen av
+  // rektangeln) så den roterade formen aldrig klipps av vid någon
+  // vinkel.
+  const w = Math.round(size * 0.85), h = Math.round(size * 1.6);
+  const outerSize = busRectOuterSize(size);
   let textAngle = ((rotationDeg % 360) + 360) % 360 + 90;
   textAngle = ((textAngle % 360) + 360) % 360;
   if (textAngle > 90 && textAngle < 270) textAngle -= 180;
   return `
-    <div class="bus-rect-outer" style="width:${size}px;height:${size}px;">
+    <div class="bus-rect-outer" style="width:${outerSize}px;height:${outerSize}px;">
       <div class="bus-rect-inner" style="width:${w}px;height:${h}px;background:${bg};transform:rotate(${rotationDeg}deg);">
-        <span class="bus-rect-label" style="font-size:${fontSize}px;color:${fg};transform:rotate(${textAngle - rotationDeg}deg);">${label}</span>
+        <span class="bus-rect-label" style="font-size:${fontSize}px;transform:rotate(${textAngle - rotationDeg}deg);">${label}</span>
       </div>
     </div>
   `;
@@ -1843,7 +1844,7 @@ function iconHtml(tripInfo, moving, rotationDeg) {
   const isOresundstag = tripInfo && tripInfo.brand === "oresundstag";
   const isTestRotated = tripInfo && tripInfo.line === TEST_ROTATED_ICON_LINE && rotationDeg != null && bg && shouldShowLabels();
   if (isTestRotated) {
-    return busRectangleIconHtml(label, bg, fg, size, fontSize, rotationDeg);
+    return busRectangleIconHtml(label, bg, size, fontSize, rotationDeg);
   }
   const labelHtml = shouldShowLabels()
     ? (isOresundstag ? `<span class="label oresundstag-logo">${ORESUNDSTAG_LOGO_SVG}</span>` : `<span class="label">${label}</span>`)
@@ -1853,13 +1854,23 @@ function iconHtml(tripInfo, moving, rotationDeg) {
 function markerClassName(tripInfo) {
   return `vehicle-marker${tripInfo && isRailRouteType(tripInfo.type) ? " rail" : ""}`;
 }
+// Delad mellan busRectangleIconHtml och makeDivIcon, så den yttre
+// "burken" alltid har exakt samma storlek på båda ställena (annars
+// klipper/felpositionerar Leaflet ikonen).
+function busRectOuterSize(size) {
+  const w = size * 0.85, h = size * 1.6;
+  return Math.round(Math.hypot(w, h) * 1.02);
+}
+
 function makeDivIcon(tripInfo, moving, rotationDeg) {
   const size = iconSizeForZoom(tripInfo);
+  const isTestRotated = tripInfo && tripInfo.line === TEST_ROTATED_ICON_LINE && rotationDeg != null && shouldShowLabels();
+  const outerSize = isTestRotated ? busRectOuterSize(size) : size;
   return L.divIcon({
     className: markerClassName(tripInfo),
     html: iconHtml(tripInfo, moving, rotationDeg),
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
+    iconSize: [outerSize, outerSize],
+    iconAnchor: [outerSize / 2, outerSize / 2],
   });
 }
 // Bara fordon inom (en marginal runt) det synliga kartutsnittet får en
