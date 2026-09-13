@@ -227,6 +227,18 @@
       -1px  1px 0 #000,
        1px  1px 0 #000;
   }
+  .vehicle-icon .label.oresundstag-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 85%;
+    height: 85%;
+    text-shadow: none;
+  }
+  .vehicle-icon .label.oresundstag-logo svg {
+    width: 100%;
+    height: 100%;
+  }
   .train-station-icon {
     display: flex;
     align-items: center;
@@ -1747,6 +1759,15 @@ function lineLabelFor(tripInfo, displayName) {
   if (tripInfo && tripInfo.brand === "skaneexpressen") return `Skåneexpressen ${displayName}`;
   return `Linje ${displayName}`;
 }
+// Egen SVG-återgivning av Öresundstågs officiella symbol (röd ring med
+// två diagonala mellanrum) — inte en direkt kopia av bildfilen, utan
+// nyritad kod som efterliknar samma allmänna form.
+const ORESUNDSTAG_LOGO_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1a11 11 0 100 22 11 11 0 000-22zm0 5.5a5.5 5.5 0 110 11 5.5 5.5 0 010-11z" fill="#e2231a"/>
+  <rect x="-4" y="8.5" width="16" height="7" fill="#a3a9ad" transform="rotate(-35 12 12)"/>
+  <rect x="12" y="8.5" width="16" height="7" fill="#a3a9ad" transform="rotate(-35 12 12)"/>
+</svg>`;
+
 function iconHtml(tripInfo, moving) {
   const hasColor = tripInfo && tripInfo.color;
   const bg = hasColor ? `#${tripInfo.color}` : null;
@@ -1757,7 +1778,12 @@ function iconHtml(tripInfo, moving) {
   const jitterDelay = moving ? `animation-delay:-${(Math.random() * 0.9).toFixed(2)}s;` : "";
   const style = `${bg ? `background:${bg};color:${fg};` : ""}width:${size}px;height:${size}px;font-size:${fontSize}px;${jitterDelay}`;
   const cls = `${hasColor ? "" : "unknown"} ${moving ? "moving" : ""}`.trim();
-  const labelHtml = shouldShowLabels() ? `<span class="label">${label}</span>` : "";
+  // Öresundståg (alltid den simulerade markeringen, riktig realtidsdata
+  // finns aldrig) får sin officiella symbol istället för textetiketten.
+  const isOresundstag = tripInfo && tripInfo.brand === "oresundstag";
+  const labelHtml = shouldShowLabels()
+    ? (isOresundstag ? `<span class="label oresundstag-logo">${ORESUNDSTAG_LOGO_SVG}</span>` : `<span class="label">${label}</span>`)
+    : "";
   return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
 }
 function markerClassName(tripInfo) {
