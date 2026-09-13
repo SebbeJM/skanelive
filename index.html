@@ -1702,12 +1702,9 @@ const ZOOM_LABEL_THRESHOLD = 14; // höjt från 12 — kräver mer inzoomning in
 function shouldShowLabels() {
   return map.getZoom() >= ZOOM_LABEL_THRESHOLD;
 }
-function iconSizeForZoom(tripInfo) {
-  const isRail = tripInfo && isRailRouteType(tripInfo.type);
-  // Tåg behåller sin ursprungliga storlek — de senaste förminskningarna
-  // gäller bara bussar.
-  const veryMinZoom = 5, veryMinSize = isRail ? 4 : 2;
-  const minSize = isRail ? 7 : 4, maxSize = isRail ? 22 : 11, minZoom = 8, maxZoom = 14;
+function iconSizeForZoom() {
+  const veryMinZoom = 5, veryMinSize = 2; // ännu mindre vid mycket utzoomning (nästan hälften av förut)
+  const minSize = 4, maxSize = 11, minZoom = 8, maxZoom = 14; // nästan halverad storlek precis innan texten dyker upp
   const z = map.getZoom();
   if (z <= veryMinZoom) return veryMinSize;
   if (z < minZoom) {
@@ -1746,7 +1743,7 @@ function iconHtml(tripInfo, moving) {
   const bg = hasColor ? `#${tripInfo.color}` : null;
   const fg = tripInfo && tripInfo.textColor ? `#${tripInfo.textColor}` : "#eef1ec";
   const label = tripInfo && tripInfo.line ? tripInfo.line : "";
-  const size = iconSizeForZoom(tripInfo);
+  const size = iconSizeForZoom();
   const fontSize = Math.max(7, Math.round(size * 0.45));
   const jitterDelay = moving ? `animation-delay:-${(Math.random() * 0.9).toFixed(2)}s;` : "";
   const style = `${bg ? `background:${bg};color:${fg};` : ""}width:${size}px;height:${size}px;font-size:${fontSize}px;${jitterDelay}`;
@@ -1758,7 +1755,7 @@ function markerClassName(tripInfo) {
   return `vehicle-marker${tripInfo && isRailRouteType(tripInfo.type) ? " rail" : ""}`;
 }
 function makeDivIcon(tripInfo, moving) {
-  const size = iconSizeForZoom(tripInfo);
+  const size = iconSizeForZoom();
   return L.divIcon({
     className: markerClassName(tripInfo),
     html: iconHtml(tripInfo, moving),
