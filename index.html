@@ -186,30 +186,6 @@
   .leaflet-container.map-moving .vehicle-marker {
     transition: none !important;
   }
-  /* TEST: roterande rektangel-ikon för linje 177 */
-  .bus-rect-outer {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .bus-rect-inner {
-    position: relative;
-    border-radius: 3px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 6.5s linear;
-    will-change: transform;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.6);
-  }
-  .leaflet-container.map-moving .bus-rect-inner {
-    transition: none !important;
-  }
-  .bus-rect-label {
-    font-weight: 600;
-    white-space: nowrap;
-    color: #000000;
-  }
   @keyframes vehicle-jitter {
     0%   { transform: translate(0, 0); }
     20%  { transform: translate(0.18px, -0.12px); }
@@ -1792,44 +1768,7 @@ const ORESUNDSTAG_LOGO_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/
   <rect x="12" y="8.5" width="16" height="7" fill="#a3a9ad" transform="rotate(-35 12 12)"/>
 </svg>`;
 
-// TEST: bara linje 177 får rektangel-ikoner som roterar efter riktning
-// (istället för cirklar) — avgränsat medvetet tills vi vet att det
-// fungerar bra, innan vi eventuellt bygger ut det till alla fordon.
-const TEST_ROTATED_ICON_LINE = "166";
-
-// Räknar ut den KORTASTE rotationsvägen från en nuvarande (obegränsad,
-// kan vara t.ex. 720°) rotation till en ny kompass-bearing (0-360°) —
-// annars kan CSS-övergången av misstag snurra hela vägen runt fel håll
-// om t.ex. bearing går från 10° till 350° (bara 20° i verkligheten).
-function shortestRotationTarget(currentDeg, targetBearing) {
-  const diff = (((targetBearing - currentDeg) % 360) + 540) % 360 - 180;
-  return currentDeg + diff;
-}
-
-// Bygger HTML för en roterande rektangel-ikon (testet för linje 177).
-// Texten löper längs rektangelns LÅNGA sida (bättre plats för längre
-// nummer som "177"), men vänder sig 180° istället för att bli upp och
-// ner om rotationen annars skulle göra det.
-function busRectangleIconHtml(label, bg, size, fontSize, rotationDeg) {
-  // Bredare och tydligt längre än bred (mer buss-likt) — och den
-  // yttre "burken" (bus-rect-outer) är extra rymlig (diagonalen av
-  // rektangeln) så den roterade formen aldrig klipps av vid någon
-  // vinkel.
-  const w = Math.round(size * 0.85), h = Math.round(size * 1.6);
-  const outerSize = busRectOuterSize(size);
-  let textAngle = ((rotationDeg % 360) + 360) % 360 + 90;
-  textAngle = ((textAngle % 360) + 360) % 360;
-  if (textAngle > 90 && textAngle < 270) textAngle -= 180;
-  return `
-    <div class="bus-rect-outer" style="width:${outerSize}px;height:${outerSize}px;">
-      <div class="bus-rect-inner" style="width:${w}px;height:${h}px;background:${bg};transform:rotate(${rotationDeg}deg);">
-        <span class="bus-rect-label" style="font-size:${fontSize}px;transform:rotate(${textAngle - rotationDeg}deg);">${label}</span>
-      </div>
-    </div>
-  `;
-}
-
-function iconHtml(tripInfo, moving, rotationDeg) {
+function iconHtml(tripInfo, moving) {
   const hasColor = tripInfo && tripInfo.color;
   const bg = hasColor ? `#${tripInfo.color}` : null;
   const fg = tripInfo && tripInfo.textColor ? `#${tripInfo.textColor}` : "#eef1ec";
@@ -1842,10 +1781,6 @@ function iconHtml(tripInfo, moving, rotationDeg) {
   // Öresundståg (alltid den simulerade markeringen, riktig realtidsdata
   // finns aldrig) får sin officiella symbol istället för textetiketten.
   const isOresundstag = tripInfo && tripInfo.brand === "oresundstag";
-  const isTestRotated = tripInfo && tripInfo.line === TEST_ROTATED_ICON_LINE && rotationDeg != null && bg && shouldShowLabels();
-  if (isTestRotated) {
-    return busRectangleIconHtml(label, bg, size, fontSize, rotationDeg);
-  }
   const labelHtml = shouldShowLabels()
     ? (isOresundstag ? `<span class="label oresundstag-logo">${ORESUNDSTAG_LOGO_SVG}</span>` : `<span class="label">${label}</span>`)
     : "";
@@ -1854,23 +1789,13 @@ function iconHtml(tripInfo, moving, rotationDeg) {
 function markerClassName(tripInfo) {
   return `vehicle-marker${tripInfo && isRailRouteType(tripInfo.type) ? " rail" : ""}`;
 }
-// Delad mellan busRectangleIconHtml och makeDivIcon, så den yttre
-// "burken" alltid har exakt samma storlek på båda ställena (annars
-// klipper/felpositionerar Leaflet ikonen).
-function busRectOuterSize(size) {
-  const w = size * 0.85, h = size * 1.6;
-  return Math.round(Math.hypot(w, h) * 1.02);
-}
-
-function makeDivIcon(tripInfo, moving, rotationDeg) {
+function makeDivIcon(tripInfo, moving) {
   const size = iconSizeForZoom(tripInfo);
-  const isTestRotated = tripInfo && tripInfo.line === TEST_ROTATED_ICON_LINE && rotationDeg != null && shouldShowLabels();
-  const outerSize = isTestRotated ? busRectOuterSize(size) : size;
   return L.divIcon({
     className: markerClassName(tripInfo),
-    html: iconHtml(tripInfo, moving, rotationDeg),
-    iconSize: [outerSize, outerSize],
-    iconAnchor: [outerSize / 2, outerSize / 2],
+    html: iconHtml(tripInfo, moving),
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
   });
 }
 // Bara fordon inom (en marginal runt) det synliga kartutsnittet får en
@@ -1935,11 +1860,10 @@ function updateVehicles(entities) {
       </div>
     `;
     const iconKey = `${(tripInfo && tripInfo.color) || ""}|${displayName}|${shouldShowLabels()}|${isMoving}`;
-    const bearing = vp.position.bearing;
     if (markers.has(id)) {
       const entry = markers.get(id);
       if (entry.iconKey !== iconKey) {
-        entry.marker.setIcon(makeDivIcon(tripInfo, isMoving, entry.rotationDeg));
+        entry.marker.setIcon(makeDivIcon(tripInfo, isMoving));
         entry.iconKey = iconKey;
       }
       entry.tripInfo = tripInfo;
@@ -1951,25 +1875,6 @@ function updateVehicles(entities) {
       const clamped = Math.max(1000, Math.min(elapsed, POLL_INTERVAL_MS * 2));
       const el = entry.marker.getElement();
       if (el) el.style.transitionDuration = `${clamped}ms`;
-      // TEST (linje 177): rotationen uppdateras direkt på det befintliga
-      // DOM-elementet (inte via setIcon, som skulle skapa ett nytt
-      // element och förstöra CSS-övergången) — så den kortaste-vägen-
-      // rotationen animeras mjukt precis som positionen.
-      if (displayName === TEST_ROTATED_ICON_LINE && bearing != null && el && shouldShowLabels()) {
-        const inner = el.querySelector(".bus-rect-inner");
-        if (inner) {
-          entry.rotationDeg = shortestRotationTarget(entry.rotationDeg ?? bearing, bearing);
-          inner.style.transitionDuration = `${clamped}ms`;
-          inner.style.transform = `rotate(${entry.rotationDeg}deg)`;
-        } else {
-          // Ikonen skapades som en cirkel (troligen saknades bearing-data
-          // just DÅ) — men nu har vi giltig bearing, så bygg om den till
-          // en rektangel direkt istället för att förbli en cirkel för
-          // alltid.
-          entry.rotationDeg = bearing;
-          entry.marker.setIcon(makeDivIcon(tripInfo, isMoving, entry.rotationDeg));
-        }
-      }
       entry.lastUpdateTime = now;
       entry.popupBaseHtml = popupHtml;
       entry.id = id;
@@ -1994,14 +1899,13 @@ function updateVehicles(entities) {
         });
       }
     } else {
-      const initialRotation = displayName === TEST_ROTATED_ICON_LINE && bearing != null ? bearing : undefined;
-      const marker = L.marker([lat, lon], { icon: makeDivIcon(tripInfo, isMoving, initialRotation) }).addTo(map);
+      const marker = L.marker([lat, lon], { icon: makeDivIcon(tripInfo, isMoving) }).addTo(map);
       const popup = L.popup({ offset: [0, -14], closeButton: false, autoClose: false, closeOnClick: false, autoPan: false })
         .setContent(popupHtml);
       const newEntry = {
         marker, popup, iconKey, tripInfo, moving: isMoving,
         lastUpdateTime: Date.now(), pinned: false, popupBaseHtml: popupHtml,
-        id: id, lastSpeed: speed, rotationDeg: initialRotation
+        id: id, lastSpeed: speed
       };
       markers.set(id, newEntry);
       marker.on("mouseover", () => {
