@@ -1367,6 +1367,9 @@ window.showLineForVehicle = function (id) {
   const entry = markers.get(id);
   if (entry && entry.tripInfo) {
     showLineForRoute(entry.tripInfo);
+    // Uppdaterar popupens knapp direkt (inte bara vid nästa
+    // automatiska uppdatering) så den byter till "Dölj linje" genast.
+    if (entry.pinned) entry.popup.setContent(renderPopupHtml(entry.popupBaseHtml, entry.pinned, id));
     return;
   }
   if (!lastEntities) return;
@@ -1380,6 +1383,11 @@ window.showLineForVehicle = function (id) {
   const tripId = match.vehicle.trip && match.vehicle.trip.tripId ? match.vehicle.trip.tripId : "";
   const tripInfo = tripInfoByTripId.get(tripId);
   showLineForRoute(tripInfo);
+};
+window.hideLineFromPopup = function (id) {
+  hideLine();
+  const entry = markers.get(id);
+  if (entry && entry.pinned) entry.popup.setContent(renderPopupHtml(entry.popupBaseHtml, entry.pinned, id));
 };
 
 lineHudClose.addEventListener("click", (e) => {
@@ -2161,11 +2169,16 @@ function renderPopupHtml(baseHtml, pinned, id) {
     : baseHtml;
   if (followedId === id) return html;
   // Linjen visas nu automatiskt så fort fordonet klickas/pinnas fast —
-  // knappen finns bara med DÅ (inte vid en vanlig hover-titt, eftersom
-  // linjen inte visas förrän man faktiskt pinnat fast popupen), och
-  // dess enda uppgift är att kunna dölja den igen om man vill.
+  // knappen finns bara med DÅ (inte vid en vanlig hover-titt). Den är
+  // en riktig växel: "Dölj linje" om den just nu syns, "Se linje" om
+  // man själv dolt den och vill se den igen.
+  const entry = markers.get(id);
+  const thisRouteId = entry && entry.tripInfo && entry.tripInfo.routeId;
+  const isLineShown = pinned && currentRouteId != null && currentRouteId === thisRouteId;
   const lineBtnHtml = pinned
-    ? `<button class="follow-btn" onclick="event.stopPropagation(); hideLine();">Dölj linje</button>`
+    ? (isLineShown
+        ? `<button class="follow-btn" onclick="event.stopPropagation(); window.hideLineFromPopup('${id}');">Dölj linje</button>`
+        : `<button class="follow-btn" onclick="event.stopPropagation(); window.showLineForVehicle('${id}')">Se linje</button>`)
     : "";
   html = html.replace(
     '</div>',
