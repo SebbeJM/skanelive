@@ -63,6 +63,13 @@
     grid-template-rows: auto 1fr;
     height: 100%;
   }
+  /* Kartans wrapper: min-height 0 så grid-raden 1fr kan styra höjden
+     korrekt (annars kan inline height:100% ge 0-höjd när headern döljs). */
+  #app > div {
+    min-height: 0;
+    position: relative;
+    height: 100%;
+  }
   header {
     position: relative;
     display: flex;
@@ -1171,12 +1178,21 @@
     .ti-track, .ti-restid, .ti-transfer-bar {
       font-size: 0.68rem;
     }
-    /* Dölj headern när en resa är vald — mer plats åt kartan */
+    /* Dölj headern när en resa är vald — mer plats åt kartan.
+       Byt till en enda 1fr-rad så kartan fyller hela höjden (annars
+       kunde grid + display:none ge 0-höjd → grå Leaflet-bakgrund). */
+    #app.trip-active {
+      grid-template-rows: 1fr;
+    }
     #app.trip-active header {
       display: none;
     }
     #app.trip-active #trip-planner-btn {
       display: none;
+    }
+    #app.trip-active > div {
+      height: 100%;
+      min-height: 0;
     }
     #trip-planner-panel {
       width: 240px;
@@ -1666,17 +1682,38 @@ tripPlannerBtn.addEventListener("click", () => {
 tpPanelClose.addEventListener("click", () => tripPlannerPanel.classList.remove("visible"));
 const tiExpandBtn = document.getElementById("ti-expand-btn");
 const appEl = document.getElementById("app");
+let lastTripAllPoints = null;
+
+// Efter layoutändring (header döljs/visas) måste Leaflet räkna om
+// storlek — annars blir kartan grå på mobil. Körs i flera steg så
+// webbläsaren hann applicera CSS innan invalidateSize.
+function refreshMapLayout(fitPoints) {
+  const run = () => {
+    map.invalidateSize({ animate: false });
+    if (fitPoints && fitPoints.length) {
+      try {
+        map.fitBounds(fitPoints, { padding: [40, 40], animate: false });
+      } catch (err) { /* ignorera ogiltiga bounds */ }
+    }
+  };
+  requestAnimationFrame(() => {
+    run();
+    requestAnimationFrame(run);
+    setTimeout(run, 100);
+    setTimeout(run, 300);
+  });
+}
 
 function closeTripItinerary() {
   tripItineraryPanel.classList.remove("visible", "expanded");
   appEl.classList.remove("trip-active");
   tripLegsLayer.clearLayers();
   document.getElementById("ti-tabs").innerHTML = "";
+  lastTripAllPoints = null;
   if (tripDurationPopup) { map.removeLayer(tripDurationPopup); tripDurationPopup = null; }
   for (const popup of stopPopups) map.removeLayer(popup);
   stopPopups = [];
-  // Kartan behöver räkna om storlek när headern kommer tillbaka.
-  setTimeout(() => map.invalidateSize(), 50);
+  refreshMapLayout();
 }
 
 tiPanelClose.addEventListener("click", closeTripItinerary);
@@ -2034,6 +2071,7 @@ async function showTripAtIndex(index) {
   const legs = trip.LegList && trip.LegList.Leg ? trip.LegList.Leg : [];
   renderItinerarySteps(legs);
   const allPoints = await drawTripLegsOnMap(legs);
+  lastTripAllPoints = allPoints;
   // Ny ruta för varje flik man växlar till, med den resans egen
   // restid — ersätter en eventuell tidigare visad ruta.
   showTripDurationPopup(trip, allPoints);
@@ -2086,7 +2124,7 @@ tpSearchBtn.addEventListener("click", async () => {
     appEl.classList.add("trip-active");
     tripPlannerPanel.classList.remove("visible");
     tpStatus.textContent = "";
-    setTimeout(() => map.invalidateSize(), 50);
+    refreshMapLayout(lastTripAllPoints);
   } catch (err) {
     console.warn("Kunde inte hämta reseförslag (saknas en riktig ResRobot-nyckel i worker.js?):", err.message);
     tpStatus.textContent = "Kunde inte hämta reseförslag just nu.";
