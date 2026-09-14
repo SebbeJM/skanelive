@@ -1964,9 +1964,14 @@ async function drawTripLegsOnMap(legs) {
       }
       openStopPopup(oLat, oLon, "Från", leg.Origin.name || "", fromTime);
     } else if (oLat != null && leg.type !== "WALK") {
-      L.circleMarker([oLat, oLon], { radius: 6, color: "#0e0e0e", weight: 2, fillColor: "#f9a825", fillOpacity: 1 })
-        .addTo(tripLegsLayer);
-      openStopPopup(oLat, oLon, "Byte", leg.Origin.name || "", depTime);
+      // Första fordonsavgången efter en inledande gångsträcka är
+      // påstigning, inte byte — ingen orange markör eller "Byte"-bubbla.
+      const isFirstVehicleLeg = !legs.slice(0, i).some((l) => l.type !== "WALK");
+      if (!isFirstVehicleLeg) {
+        L.circleMarker([oLat, oLon], { radius: 6, color: "#0e0e0e", weight: 2, fillColor: "#f9a825", fillOpacity: 1 })
+          .addTo(tripLegsLayer);
+        openStopPopup(oLat, oLon, "Byte", leg.Origin.name || "", depTime);
+      }
     }
     if (i === legs.length - 1 && dLat != null) {
       L.circleMarker([dLat, dLon], { radius: 7, color: "#0e0e0e", weight: 2, fillColor: "#ffffff", fillOpacity: 1 })
