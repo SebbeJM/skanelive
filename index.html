@@ -1628,7 +1628,7 @@ function renderVisibleBusStops() {
   for (const s of allBusStops) {
     if (!bounds.contains([s.lat, s.lon])) continue;
     L.marker([s.lat, s.lon], { icon: busStopIcon() })
-      .bindTooltip(s.name, { direction: "top", offset: [0, -10] })
+      .bindTooltip(`${s.name}<br><span style="opacity:0.75;font-size:0.85em;">Tryck för att se tidtabell</span>`, { direction: "top", offset: [0, -10] })
       .on("click", () => openDepartureBoardPanel(s.name))
       .addTo(busStopsLayer);
   }
@@ -2459,7 +2459,7 @@ function drawRealTrainStations(stations) {
       iconAnchor: [10, 10],
     });
     const marker = L.marker([s.lat, s.lon], { icon }).addTo(trainStationsLayer);
-    marker.bindTooltip(s.name, { direction: "top", offset: [0, -12] });
+    marker.bindTooltip(`${s.name}<br><span style="opacity:0.75;font-size:0.85em;">Tryck för att se tidtabell</span>`, { direction: "top", offset: [0, -12] });
     marker.on("click", () => openDepartureBoardPanel(s.name));
     trainStationMarkers.set(s.name, { marker });
   }
