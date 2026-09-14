@@ -344,18 +344,61 @@
     cursor: pointer;
     padding: 0 0.2rem;
   }
-  .tp-field-row {
-    display: flex;
-    gap: 0.4rem;
+  .tp-fields-group {
+    position: relative;
     margin-bottom: 0.5rem;
+  }
+  .tp-fields-stack {
+    display: flex;
+    flex-direction: column;
   }
   .tp-input-wrap {
     position: relative;
-    flex: 1;
-    margin-bottom: 0.5rem;
   }
-  .tp-field-row .tp-input-wrap {
-    margin-bottom: 0;
+  .tp-fields-stack .tp-input-wrap:first-child input {
+    border-radius: 5px 5px 0 0;
+    border-bottom: none;
+  }
+  .tp-fields-stack .tp-input-wrap:last-child input {
+    border-radius: 0 0 5px 5px;
+  }
+  #tp-swap-btn {
+    position: absolute;
+    top: 50%;
+    right: 0.5rem;
+    transform: translateY(-50%);
+    z-index: 5;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  #tp-swap-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  #tp-use-location-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--input-bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: var(--fg);
+    padding: 0.4rem 0.55rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    cursor: pointer;
+    margin-bottom: 0.5rem;
   }
   .tp-suggestions {
     display: none;
@@ -395,6 +438,10 @@
     font-size: 0.85rem;
     font-family: inherit;
     margin-bottom: 0.5rem;
+  }
+  .tp-fields-stack input {
+    margin-bottom: 0;
+    padding-right: 2.1rem;
   }
   .tp-field-row input {
     margin-bottom: 0;
@@ -511,7 +558,7 @@
     display: block;
   }
   .trip-duration-popup .leaflet-popup-content-wrapper {
-    background: var(--accent);
+    background: #ffffff;
     color: #0e0e0e;
     border-radius: 14px;
     padding: 0.1rem;
@@ -521,7 +568,7 @@
     font-size: 0.82rem;
   }
   .trip-duration-popup .leaflet-popup-tip {
-    background: var(--accent);
+    background: #ffffff;
   }
   #ti-buy-ticket {
     display: block;
@@ -1157,19 +1204,25 @@
         <span>Reseplanerare</span>
         <button id="tp-panel-close" aria-label="Stäng">&times;</button>
       </div>
-      <div class="tp-field-row">
-        <div class="tp-input-wrap">
-          <input type="text" id="tp-from-input" placeholder="Från (hållplats)" autocomplete="off">
-          <div class="tp-suggestions" id="tp-from-suggestions"></div>
+      <div class="tp-fields-group">
+        <div class="tp-fields-stack">
+          <div class="tp-input-wrap">
+            <input type="text" id="tp-from-input" placeholder="Från" autocomplete="off">
+            <div class="tp-suggestions" id="tp-from-suggestions"></div>
+          </div>
+          <div class="tp-input-wrap">
+            <input type="text" id="tp-to-input" placeholder="Till" autocomplete="off">
+            <div class="tp-suggestions" id="tp-to-suggestions"></div>
+          </div>
         </div>
-        <button id="tp-use-location-btn" aria-label="Använd min position" title="Använd min position">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="1" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="23"></line><line x1="1" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="23" y2="12"></line></svg>
+        <button id="tp-swap-btn" aria-label="Byt från och till" title="Byt från och till">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 21 7 17 3"></polyline><line x1="21" y1="7" x2="9" y2="7"></line><polyline points="7 21 3 17 7 13"></polyline><line x1="3" y1="17" x2="15" y2="17"></line></svg>
         </button>
       </div>
-      <div class="tp-input-wrap">
-        <input type="text" id="tp-to-input" placeholder="Till (hållplats)" autocomplete="off">
-        <div class="tp-suggestions" id="tp-to-suggestions"></div>
-      </div>
+      <button id="tp-use-location-btn">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="1" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="23"></line><line x1="1" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="23" y2="12"></line></svg>
+        <span>Använd min position</span>
+      </button>
       <button id="tp-search-btn">Sök resa</button>
       <div id="tp-status"></div>
     </div>
@@ -1484,6 +1537,20 @@ tpUseLocationBtn.addEventListener("click", () => {
 });
 tpFromInput.addEventListener("input", () => { tpOriginCoords = null; });
 
+const tpSwapBtn = document.getElementById("tp-swap-btn");
+tpSwapBtn.addEventListener("click", () => {
+  const fromValue = tpFromInput.value, toValue = tpToInput.value;
+  tpFromInput.value = toValue;
+  tpToInput.value = fromValue;
+  const fromId = tpFromStopId;
+  tpFromStopId = tpToStopId;
+  tpToStopId = fromId;
+  // "Min position" kan bara vara start-punkten i vårt nuvarande
+  // upplägg, inte mål — nollställs vid byte istället för att flyttas
+  // till fältet där den inte stöds.
+  tpOriginCoords = null;
+});
+
 function parseISODuration(iso) {
   if (!iso) return "";
   const match = /^PT(?:(\d+)H)?(?:(\d+)M)?/.exec(iso);
@@ -1675,7 +1742,11 @@ function showTripDurationPopup(trip, allPoints) {
     tripDurationPopup = null;
   }
   if (!allPoints || !allPoints.length) return;
-  const center = L.latLngBounds(allPoints).getCenter();
+  // Mitten LÄNGS den faktiska rutten (samma teknik som redan används
+  // för att hitta positioner längs en kurva), inte mitten av hela
+  // rutans yttre ram — annars kunde den hamna långt bort från själva
+  // linjen om rutten svänger mycket.
+  const center = allPoints.length >= 2 ? pointAlongPolylineFraction(allPoints, 0.5) : allPoints[0];
   const durationText = parseISODuration(trip.duration) || "okänd tid";
   tripDurationPopup = L.popup({
     closeButton: false,
