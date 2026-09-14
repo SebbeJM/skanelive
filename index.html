@@ -306,153 +306,6 @@
   }
   /* Avgångstavla — fast ruta nere till höger (inte en flytande
      kart-popup), stylad som en riktig elektronisk pendlartavla. */
-  /* Reseplanerare — sökpanel (öppnas via headerns knapp) och
-     resultat-panelen med stegen, fasta rutor precis som
-     avgångstavlan. */
-  #trip-planner-panel {
-    display: none;
-    position: absolute;
-    top: 4.2rem;
-    right: 1.25rem;
-    z-index: 1150;
-    width: 280px;
-    max-width: 90vw;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
-    padding: 0.7rem;
-  }
-  #trip-planner-panel.visible {
-    display: block;
-  }
-  .tp-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-weight: 700;
-    font-size: 0.88rem;
-    margin-bottom: 0.6rem;
-    color: var(--fg);
-  }
-  .tp-header button {
-    background: none;
-    border: none;
-    color: var(--muted);
-    font-size: 1.3rem;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 0.2rem;
-  }
-  .tp-field-row {
-    display: flex;
-    gap: 0.4rem;
-    margin-bottom: 0.5rem;
-  }
-  #trip-planner-panel input {
-    width: 100%;
-    box-sizing: border-box;
-    background: var(--input-bg);
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    color: var(--fg);
-    padding: 0.4rem 0.55rem;
-    font-size: 0.85rem;
-    font-family: inherit;
-    margin-bottom: 0.5rem;
-  }
-  .tp-field-row input {
-    margin-bottom: 0;
-  }
-  #tp-use-location-btn {
-    flex-shrink: 0;
-    background: var(--input-bg);
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    color: var(--fg);
-    padding: 0.4rem 0.5rem;
-    cursor: pointer;
-  }
-  #tp-search-btn {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--accent);
-    border-radius: 5px;
-    background: var(--accent);
-    color: #0e0e0e;
-    font-weight: 600;
-    font-size: 0.85rem;
-    font-family: inherit;
-    cursor: pointer;
-  }
-  #tp-status {
-    margin-top: 0.5rem;
-    font-size: 0.78rem;
-    color: var(--muted);
-    text-align: center;
-  }
-  #trip-itinerary-panel {
-    display: none;
-    position: absolute;
-    bottom: 22px;
-    left: 1.25rem;
-    z-index: 1150;
-    width: 290px;
-    max-width: 90vw;
-    max-height: 65vh;
-    overflow-y: auto;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.45);
-    padding: 0.7rem;
-  }
-  #trip-itinerary-panel.visible {
-    display: block;
-  }
-  .ti-step {
-    display: flex;
-    gap: 0.55rem;
-    align-items: flex-start;
-    padding: 0.45rem 0;
-    border-top: 1px solid var(--line);
-    font-size: 0.82rem;
-    color: var(--fg);
-  }
-  .ti-step:first-child {
-    border-top: none;
-  }
-  .ti-step-icon {
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 5px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.68rem;
-    font-weight: 700;
-    color: #fff;
-  }
-  .ti-step-text b {
-    display: block;
-  }
-  .ti-step-text span {
-    color: var(--muted);
-    font-size: 0.78rem;
-  }
-  #ti-buy-ticket {
-    display: block;
-    margin-top: 0.7rem;
-    padding: 0.55rem;
-    text-align: center;
-    background: var(--accent);
-    color: #0e0e0e;
-    font-weight: 600;
-    font-size: 0.85rem;
-    border-radius: 5px;
-    text-decoration: none;
-  }
   #departure-board-panel {
     display: none;
     position: absolute;
@@ -874,34 +727,6 @@
     font-weight: 600;
   }
   @media (max-width: 700px) {
-    #trip-itinerary-panel {
-      width: 250px;
-      max-height: 50vh;
-      padding: 0.5rem;
-      left: 0.6rem;
-      bottom: 0.6rem;
-    }
-    #trip-itinerary-panel .tp-header {
-      font-size: 0.8rem;
-    }
-    .ti-step {
-      font-size: 0.74rem;
-      padding: 0.35rem 0;
-      gap: 0.4rem;
-    }
-    .ti-step-icon {
-      width: 18px;
-      height: 18px;
-      font-size: 0.58rem;
-    }
-    .ti-step-text span {
-      font-size: 0.7rem;
-    }
-    #trip-planner-panel {
-      width: 240px;
-      right: 0.6rem;
-      top: 3.6rem;
-    }
     .subtitle {
       display: none;
     }
@@ -1018,9 +843,6 @@
       <button id="locate-btn" aria-label="Visa min position">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="1" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="23"></line><line x1="1" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="23" y2="12"></line></svg>
       </button>
-      <button id="trip-planner-btn" aria-label="Reseplanerare">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="5" r="2"></circle><path d="M8 19h8a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4H8"></path></svg>
-      </button>
       <a href="contact.html" id="contact-btn">Kontakt</a>
       <div id="status"><span class="dot"></span>ansluter…</div>
       <button id="menu-btn" aria-label="Meny" aria-expanded="false">
@@ -1062,29 +884,6 @@
         <div id="line-hud-text"></div>
         <button id="line-hud-close">Dölj linje</button>
       </div>
-    </div>
-    <div id="trip-planner-panel">
-      <div class="tp-header">
-        <span>Reseplanerare</span>
-        <button id="tp-panel-close" aria-label="Stäng">&times;</button>
-      </div>
-      <div class="tp-field-row">
-        <input type="text" id="tp-from-input" placeholder="Från (hållplats)">
-        <button id="tp-use-location-btn" aria-label="Använd min position" title="Använd min position">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="1" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="23"></line><line x1="1" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="23" y2="12"></line></svg>
-        </button>
-      </div>
-      <input type="text" id="tp-to-input" placeholder="Till (hållplats)">
-      <button id="tp-search-btn">Sök resa</button>
-      <div id="tp-status"></div>
-    </div>
-    <div id="trip-itinerary-panel">
-      <div class="tp-header">
-        <span>Din resa</span>
-        <button id="ti-panel-close" aria-label="Stäng">&times;</button>
-      </div>
-      <div id="ti-steps"></div>
-      <a id="ti-buy-ticket" href="https://www.skanetrafiken.se/" target="_blank" rel="noopener">Köp biljett</a>
     </div>
     <div id="departure-board-panel">
       <div class="db-panel-header">
@@ -1266,178 +1065,6 @@ locateBtn.addEventListener("click", () => {
     },
     { enableHighAccuracy: true, maximumAge: 5000 }
   );
-});
-
-// ============================================================
-// Reseplanerare — sök resa mellan två punkter via ResRobots
-// /trip-endpoint (samma nyckel/proxy som avgångstavlan redan
-// använder). Ritar upp resultatet steg för steg i en egen ruta, och
-// försöker rita rutten på kartan (riktig linjegeometri för
-// buss/tåg-etapper där vi kan hitta en matchning, enkel streckad
-// linje för gångetapper).
-// ============================================================
-const tripPlannerBtn = document.getElementById("trip-planner-btn");
-const tripPlannerPanel = document.getElementById("trip-planner-panel");
-const tpFromInput = document.getElementById("tp-from-input");
-const tpToInput = document.getElementById("tp-to-input");
-const tpUseLocationBtn = document.getElementById("tp-use-location-btn");
-const tpSearchBtn = document.getElementById("tp-search-btn");
-const tpStatus = document.getElementById("tp-status");
-const tpPanelClose = document.getElementById("tp-panel-close");
-const tripItineraryPanel = document.getElementById("trip-itinerary-panel");
-const tiSteps = document.getElementById("ti-steps");
-const tiPanelClose = document.getElementById("ti-panel-close");
-const tripLegsLayer = L.layerGroup().addTo(map);
-
-let tpOriginCoords = null; // sätts av "använd min position"-knappen
-
-tripPlannerBtn.addEventListener("click", () => {
-  tripPlannerPanel.classList.toggle("visible");
-});
-tpPanelClose.addEventListener("click", () => tripPlannerPanel.classList.remove("visible"));
-tiPanelClose.addEventListener("click", () => {
-  tripItineraryPanel.classList.remove("visible");
-  tripLegsLayer.clearLayers();
-});
-
-tpUseLocationBtn.addEventListener("click", () => {
-  if (!navigator.geolocation) {
-    tpStatus.textContent = "Din webbläsare stödjer inte positionering.";
-    return;
-  }
-  tpStatus.textContent = "Hämtar din position…";
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      tpOriginCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-      tpFromInput.value = "Min position";
-      tpStatus.textContent = "";
-    },
-    () => {
-      tpStatus.textContent = "Kunde inte hämta din position.";
-    },
-    { enableHighAccuracy: true }
-  );
-});
-tpFromInput.addEventListener("input", () => { tpOriginCoords = null; });
-
-function parseISODuration(iso) {
-  if (!iso) return "";
-  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?/.exec(iso);
-  if (!match) return "";
-  const h = parseInt(match[1] || 0, 10), m = parseInt(match[2] || 0, 10);
-  return h > 0 ? `${h}h ${m}min` : `${m} min`;
-}
-
-// Färg/ikon-kategori för ett steg — läser texten på samma sätt som
-// avgångstavlans reservlösning, eftersom vi inte alltid kan koppla
-// steget exakt till vår egen realtidsdata.
-function categorizeStep(leg) {
-  if (leg.type === "WALK") return { label: "G", color: "#6d7a90" };
-  const name = (leg.name || (leg.Product && leg.Product[0] && leg.Product[0].name) || "").toLowerCase();
-  if (name.includes("öresundståg")) return { label: "T", color: "#a3a9ad" };
-  if (name.includes("pågatåg") || name.includes("tåg")) return { label: "T", color: "#645fa2" };
-  if (name.includes("skåneexpressen")) return { label: "B", color: "#f9a825" };
-  const numMatch = name.match(/\d+/);
-  const num = numMatch ? numMatch[0] : "";
-  if (num.length === 3) return { label: num, color: "#f9a825" };
-  return { label: num || "B", color: "#2e7d32" };
-}
-
-function renderItinerarySteps(legs) {
-  tiSteps.innerHTML = legs.map((leg) => {
-    const cat = categorizeStep(leg);
-    const duration = parseISODuration(leg.duration);
-    const originName = (leg.Origin && leg.Origin.name) || "";
-    const destName = (leg.Destination && leg.Destination.name) || "";
-    const title = leg.type === "WALK"
-      ? `Gå mot ${destName}`
-      : `${(leg.name || (leg.Product && leg.Product[0] && leg.Product[0].name) || "Resa")} mot ${destName}`;
-    return `
-      <div class="ti-step">
-        <span class="ti-step-icon" style="background:${cat.color};">${cat.label}</span>
-        <span class="ti-step-text"><b>${title}</b><span>${duration}${originName ? " · från " + originName : ""}</span></span>
-      </div>
-    `;
-  }).join("");
-}
-
-// Ritar upp etapperna på kartan — riktig ruttgeometri för buss/tåg om
-// vi kan hitta en matchning (samma "närmast"-logik som avgångstavlans
-// klick-på-rad redan använder), annars en enkel rak linje (alltid
-// fallet för gångetapper, där det ändå bara rör sig om korta sträckor).
-async function drawTripLegsOnMap(legs) {
-  tripLegsLayer.clearLayers();
-  const allPoints = [];
-  for (const leg of legs) {
-    const oLat = leg.Origin && leg.Origin.lat, oLon = leg.Origin && leg.Origin.lon;
-    const dLat = leg.Destination && leg.Destination.lat, dLon = leg.Destination && leg.Destination.lon;
-    if (oLat == null || dLat == null) continue;
-    allPoints.push([oLat, oLon], [dLat, dLon]);
-    const cat = categorizeStep(leg);
-    if (leg.type === "WALK") {
-      L.polyline([[oLat, oLon], [dLat, dLon]], {
-        color: cat.color, weight: 3, opacity: 0.8, dashArray: "4,6",
-      }).addTo(tripLegsLayer);
-      continue;
-    }
-    const nameForLine = leg.name || (leg.Product && leg.Product[0] && leg.Product[0].name) || "";
-    const numMatch = nameForLine.match(/\d+/);
-    let drawn = false;
-    if (numMatch) {
-      const info = await findBestTripInfoForLine(numMatch[0], oLat, oLon);
-      if (info) {
-        try {
-          const routes = await ensureRouteShapesLoaded();
-          const route = routes[info.routeId];
-          if (route && route.points) {
-            L.polyline(route.points, { color: cat.color, weight: 5, opacity: 0.9 }).addTo(tripLegsLayer);
-            drawn = true;
-          }
-        } catch (err) { /* faller tillbaka på raklinjen nedan */ }
-      }
-    }
-    if (!drawn) {
-      L.polyline([[oLat, oLon], [dLat, dLon]], { color: cat.color, weight: 5, opacity: 0.9 }).addTo(tripLegsLayer);
-    }
-  }
-  if (allPoints.length) map.fitBounds(allPoints, { padding: [60, 60] });
-}
-
-async function resolveStopParam(inputValue, coords, prefix) {
-  if (coords) return { [`${prefix}CoordLat`]: coords.lat, [`${prefix}CoordLong`]: coords.lon };
-  if (!inputValue.trim()) return null;
-  const id = await findResRobotStopId(inputValue.trim());
-  return { [`${prefix}Id`]: id };
-}
-
-tpSearchBtn.addEventListener("click", async () => {
-  tpStatus.textContent = "Söker resa…";
-  try {
-    const originParams = await resolveStopParam(tpFromInput.value, tpOriginCoords, "origin");
-    const destParams = await resolveStopParam(tpToInput.value, null, "dest");
-    if (!originParams || !destParams) {
-      tpStatus.textContent = "Fyll i både från och till.";
-      return;
-    }
-    const params = new URLSearchParams({ ...originParams, ...destParams });
-    const res = await fetch(`${PROXY_URL}/resrobot/trip?${params.toString()}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const trips = data && data.Trip;
-    if (!trips || !trips.length) {
-      tpStatus.textContent = "Ingen resa hittades.";
-      return;
-    }
-    const legs = trips[0].LegList && trips[0].LegList.Leg ? trips[0].LegList.Leg : [];
-    renderItinerarySteps(legs);
-    await drawTripLegsOnMap(legs);
-    tripItineraryPanel.classList.add("visible");
-    tripPlannerPanel.classList.remove("visible");
-    tpStatus.textContent = "";
-  } catch (err) {
-    console.warn("Kunde inte hämta reseförslag (saknas en riktig ResRobot-nyckel i worker.js?):", err.message);
-    tpStatus.textContent = "Kunde inte hämta reseförslag just nu.";
-  }
 });
 
 const searchBtn = document.getElementById("search-btn");
@@ -1844,10 +1471,6 @@ function beginFollowSession(id, latlng, hudData) {
   for (const e of markers.values()) {
     e.pinned = false;
   }
-  // Den separata "Visar linje: X"-rutan (med sin egen "Dölj linje"-
-  // knapp) ska inte finnas kvar parallellt — följ-rutan har nu sin
-  // egen motsvarande knapp för samma sak.
-  lineHud.classList.remove("visible");
   followedId = id;
   updateFollowHud(hudData);
   followHud.classList.add("visible");
