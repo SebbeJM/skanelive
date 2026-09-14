@@ -492,37 +492,96 @@
   #trip-itinerary-panel.visible {
     display: block;
   }
-  .ti-step {
+  .ti-leg {
     display: flex;
-    gap: 0.55rem;
-    align-items: flex-start;
-    padding: 0.45rem 0;
-    border-top: 1px solid var(--line);
+    gap: 0.6rem;
+    padding: 0.35rem 0;
     font-size: 0.82rem;
     color: var(--fg);
   }
-  .ti-step:first-child {
-    border-top: none;
-  }
-  .ti-step-icon {
+  .ti-leg-line {
     flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 5px;
+    width: 14px;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    font-size: 0.68rem;
-    font-weight: 700;
-    color: #fff;
   }
-  .ti-step-text b {
-    display: block;
+  .ti-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--leg-color);
+    background: var(--panel);
+    flex-shrink: 0;
   }
-  .ti-step-text span {
+  .ti-dot-filled {
+    background: var(--leg-color);
+  }
+  .ti-line-vert {
+    flex: 1;
+    width: 2px;
+    background: var(--leg-color);
+    margin: 2px 0;
+  }
+  .ti-leg-body {
+    flex: 1;
+    min-width: 0;
+    padding-bottom: 0.3rem;
+  }
+  .ti-stop-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.15rem 0;
+  }
+  .ti-time {
+    flex-shrink: 0;
+    width: 2.6rem;
+  }
+  .ti-stop-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .ti-track {
     display: block;
     color: var(--muted);
+    font-size: 0.72rem;
+  }
+  .ti-restid {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+  .ti-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.3rem 0;
+    padding: 0.28rem 0.5rem;
+    border-radius: 5px;
     font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .ti-badge-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    background: rgba(0,0,0,0.15);
+    font-size: 0.65rem;
+  }
+  .ti-transfer-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.2rem 0;
+    padding: 0.4rem 0.6rem;
+    background: var(--input-bg);
+    border-radius: 5px;
+    font-size: 0.78rem;
+    color: var(--muted);
   }
   #ti-tabs {
     display: flex;
@@ -1019,18 +1078,20 @@
     #trip-itinerary-panel .tp-header {
       font-size: 0.8rem;
     }
-    .ti-step {
+    .ti-leg {
       font-size: 0.74rem;
-      padding: 0.35rem 0;
+      padding: 0.3rem 0;
       gap: 0.4rem;
     }
-    .ti-step-icon {
-      width: 18px;
-      height: 18px;
-      font-size: 0.58rem;
+    .ti-time {
+      width: 2.2rem;
     }
-    .ti-step-text span {
+    .ti-badge {
       font-size: 0.7rem;
+      padding: 0.22rem 0.4rem;
+    }
+    .ti-track, .ti-restid, .ti-transfer-bar {
+      font-size: 0.68rem;
     }
     #trip-planner-panel {
       width: 240px;
@@ -1628,28 +1689,70 @@ function extractLegPolyline(leg) {
   return null;
 }
 
+function timeToMinutes(timeStr) {
+  if (!timeStr) return null;
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + m;
+}
+
 function renderItinerarySteps(legs) {
-  tiSteps.innerHTML = legs.map((leg) => {
+  const parts = [];
+  legs.forEach((leg, i) => {
     const cat = categorizeStep(leg);
     const duration = parseISODuration(leg.duration);
     const originName = (leg.Origin && leg.Origin.name) || "";
     const destName = (leg.Destination && leg.Destination.name) || "";
+    const originTrack = (leg.Origin && leg.Origin.track) || "";
+    const destTrack = (leg.Destination && leg.Destination.track) || "";
     const depTime = (leg.Origin && leg.Origin.time || "").slice(0, 5);
     const arrTime = (leg.Destination && leg.Destination.time || "").slice(0, 5);
-    const title = leg.type === "WALK"
-      ? `Gå mot ${destName}`
-      : `${(leg.name || (leg.Product && leg.Product[0] && leg.Product[0].name) || "Resa")} mot ${destName}`;
-    return `
-      <div class="ti-step">
-        <span class="ti-step-icon" style="background:${cat.color};">${cat.label}</span>
-        <span class="ti-step-text">
-          <b>${title}</b>
-          <span>${duration}${originName ? " · från " + originName : ""}</span>
-          ${depTime || arrTime ? `<span>${depTime ? "Avgång " + depTime : ""}${depTime && arrTime ? " · " : ""}${arrTime ? "Ankomst " + arrTime : ""}</span>` : ""}
-        </span>
+    const lineLabel = leg.type === "WALK" ? "Gång" : (leg.name || (leg.Product && leg.Product[0] && leg.Product[0].name) || "Resa");
+    const badgeTextColor = cat.color.toLowerCase() === "#f9a825" ? "#1a1205" : "#ffffff";
+
+    parts.push(`
+      <div class="ti-leg">
+        <div class="ti-leg-line" style="--leg-color:${cat.color};">
+          <span class="ti-dot ti-dot-filled"></span>
+          <span class="ti-line-vert"></span>
+          <span class="ti-dot"></span>
+        </div>
+        <div class="ti-leg-body">
+          <div class="ti-stop-row">
+            <b class="ti-time">${depTime}</b>
+            <div class="ti-stop-info"><b>${originName}</b>${originTrack ? `<span class="ti-track">Läge ${originTrack}</span>` : ""}</div>
+          </div>
+          <div class="ti-badge" style="background:${cat.color};color:${badgeTextColor};">
+            <span class="ti-badge-icon">${cat.label}</span>
+            <span>${lineLabel}</span>
+          </div>
+          <div class="ti-stop-row">
+            <b class="ti-time">${arrTime}</b>
+            <div class="ti-stop-info"><b>${destName}</b>${destTrack ? `<span class="ti-track">Läge ${destTrack}</span>` : ""}</div>
+            <span class="ti-restid">Restid ${duration}</span>
+          </div>
+        </div>
       </div>
-    `;
-  }).join("");
+    `);
+
+    if (i < legs.length - 1) {
+      const nextLeg = legs[i + 1];
+      const thisArrMin = timeToMinutes(arrTime);
+      const nextDepMin = timeToMinutes((nextLeg.Origin && nextLeg.Origin.time || "").slice(0, 5));
+      let transferText = "Byte";
+      if (thisArrMin != null && nextDepMin != null) {
+        let diff = nextDepMin - thisArrMin;
+        if (diff < 0) diff += 24 * 60;
+        transferText = `Bytestid: ${diff} min`;
+      }
+      parts.push(`
+        <div class="ti-transfer-bar">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+          <span>${transferText}</span>
+        </div>
+      `);
+    }
+  });
+  tiSteps.innerHTML = parts.join("");
 }
 
 // Ritar upp etapperna på kartan — riktig ruttgeometri för buss/tåg om
@@ -1710,6 +1813,25 @@ async function drawTripLegsOnMap(legs) {
       L.polyline([[oLat, oLon], [dLat, dLon]], { color: cat.color, weight: 5, opacity: 0.9 }).addTo(tripLegsLayer);
     }
   }
+  // Markörer vid från-, byt- och till-punkterna, med tydlig etikett.
+  legs.forEach((leg, i) => {
+    const oLat = leg.Origin && leg.Origin.lat, oLon = leg.Origin && leg.Origin.lon;
+    const dLat = leg.Destination && leg.Destination.lat, dLon = leg.Destination && leg.Destination.lon;
+    if (i === 0 && oLat != null) {
+      L.circleMarker([oLat, oLon], { radius: 7, color: "#0e0e0e", weight: 2, fillColor: "#ffffff", fillOpacity: 1 })
+        .bindTooltip(`Från: ${leg.Origin.name || ""}`, { permanent: false, direction: "top" })
+        .addTo(tripLegsLayer);
+    } else if (oLat != null) {
+      L.circleMarker([oLat, oLon], { radius: 6, color: "#0e0e0e", weight: 2, fillColor: "#f9a825", fillOpacity: 1 })
+        .bindTooltip(`Byte: ${leg.Origin.name || ""}`, { permanent: false, direction: "top" })
+        .addTo(tripLegsLayer);
+    }
+    if (i === legs.length - 1 && dLat != null) {
+      L.circleMarker([dLat, dLon], { radius: 7, color: "#0e0e0e", weight: 2, fillColor: "#ffffff", fillOpacity: 1 })
+        .bindTooltip(`Till: ${leg.Destination.name || ""}`, { permanent: false, direction: "top" })
+        .addTo(tripLegsLayer);
+    }
+  });
   if (allPoints.length) map.fitBounds(allPoints, { padding: [60, 60] });
   return allPoints;
 }
