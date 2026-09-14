@@ -854,7 +854,7 @@
       <a href="contact.html">Kontakt</a>
     </div>
     <div id="filter-panel">
-      <label><input type="checkbox" id="show-rail-lines-checkbox" checked> Visa spår och tågstationer</label>
+      <label><input type="checkbox" id="show-rail-lines-checkbox" checked> Dölj linjer</label>
       <div class="theme-toggle-row">
         <span>Ljust läge</span>
         <label class="theme-toggle-switch">
@@ -991,9 +991,11 @@ showRailLinesCheckbox.addEventListener("change", () => {
   if (showRailLinesCheckbox.checked) {
     routeLinesLayer.addTo(map);
     trainStationsLayer.addTo(map);
+    allLinesLayer.addTo(map);
   } else {
     map.removeLayer(routeLinesLayer);
     map.removeLayer(trainStationsLayer);
+    map.removeLayer(allLinesLayer);
   }
 });
 
@@ -1523,7 +1525,6 @@ function updateFollowHud(entry) {
   `;
   // "Se linje" är bara relevant för bussar — tåg följer redan sina
   // egna, fasta spår som alltid syns på kartan.
-  followLineBtn.style.display = tripInfo && isRailRouteType(tripInfo.type) ? "none" : "";
 }
 
 // Bara riktig dragning (panorering) och klick avbryter följningen.
@@ -1585,6 +1586,28 @@ function drawAllRailLines(lines) {
       interactive: false,
     }).addTo(routeLinesLayer);
   }
+}
+// Alla busslinjer (och tåglinjer, samma fil täcker allt) ritas nu upp
+// permanent — tunna och mutade i bakgrunden, i respektive linjes egen
+// färg. Klick på ett fordon förtjockar sedan just DEN linjen via
+// showLineForRoute (separat, tjockare lager ovanpå).
+const allLinesLayer = L.layerGroup().addTo(map);
+async function drawAllMutedLines() {
+  const routes = await ensureRouteShapesLoaded();
+  let count = 0;
+  for (const routeId in routes) {
+    const route = routes[routeId];
+    if (!route.points || route.points.length < 2) continue;
+    L.polyline(route.points, {
+      color: `#${route.color}`,
+      weight: 1.5,
+      opacity: 0.4,
+      renderer: routeLinesRenderer,
+      interactive: false,
+    }).addTo(allLinesLayer);
+    count++;
+  }
+  console.log(`Ritade ${count} linjer (tunna, mutade) permanent på kartan`);
 }
 
 // ============================================================
@@ -2137,9 +2160,13 @@ function renderPopupHtml(baseHtml, pinned, id) {
     ? baseHtml.replace('<div class="popup-content">', `<div class="popup-content">${PIN_ICON_SVG}`)
     : baseHtml;
   if (followedId === id) return html;
-  const entry = markers.get(id);
-  const isTrain = entry && entry.tripInfo && isRailRouteType(entry.tripInfo.type);
-  const lineBtnHtml = isTrain ? "" : `<button class="follow-btn" onclick="event.stopPropagation(); window.showLineForVehicle('${id}')">Se linje</button>`;
+  // Linjen visas nu automatiskt så fort fordonet klickas/pinnas fast —
+  // knappen finns bara med DÅ (inte vid en vanlig hover-titt, eftersom
+  // linjen inte visas förrän man faktiskt pinnat fast popupen), och
+  // dess enda uppgift är att kunna dölja den igen om man vill.
+  const lineBtnHtml = pinned
+    ? `<button class="follow-btn" onclick="event.stopPropagation(); hideLine();">Dölj linje</button>`
+    : "";
   html = html.replace(
     '</div>',
     `<div class="popup-btn-row">
@@ -2316,11 +2343,13 @@ function updateVehicles(entities) {
         L.DomEvent.stopPropagation(e);
         if (followedId === id) return;
         newEntry.pinned = !newEntry.pinned;
-        // Om man markerar en ny ikon, dölj en eventuellt visad linje
-        // (som annars kunde bli kvar och kännas ur sync med det man
-        // faktiskt tittar på nu) — bara en enkel knapptryckning bort
-        // att visa igen om man vill.
-        if (newEntry.pinned && currentRouteId) {
+        // Linjen visas nu automatiskt så fort man klickar ett fordon
+        // (ersätter en eventuellt redan visad linje, precis som
+        // showLineForRoute redan gör) — och döljs igen om man
+        // avmarkerar fordonet.
+        if (newEntry.pinned) {
+          showLineForRoute(newEntry.tripInfo);
+        } else if (currentRouteId === (newEntry.tripInfo && newEntry.tripInfo.routeId)) {
           hideLine();
         }
         popup.setContent(renderPopupHtml(newEntry.popupBaseHtml, newEntry.pinned, id));
@@ -2377,6 +2406,7 @@ async function loadRouteColors() {
     drawAllRailLines(railLinesData.lines);
     console.log(`Ritade ${railLinesData.lines.length} tåglinjer`);
     drawRealTrainStations(stationsData.stations);
+    await drawAllMutedLines();
   } catch (err) {
     console.warn("Kunde inte ladda den servergenererade linjedatan:", err);
   }
