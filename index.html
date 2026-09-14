@@ -1662,7 +1662,7 @@ function renderVisibleBusStops() {
     if (!bounds.contains([s.lat, s.lon])) continue;
     L.marker([s.lat, s.lon], { icon: busStopIcon() })
       .bindTooltip(`${s.name}<br><span style="opacity:0.75;font-size:0.85em;">Tryck för att se tidtabell</span>`, { direction: "top", offset: [0, -10] })
-      .on("click", () => openDepartureBoardPanel(s.name))
+      .on("click", () => openDepartureBoardPanel(s.name, s.lat, s.lon))
       .addTo(busStopsLayer);
   }
 }
@@ -1693,7 +1693,7 @@ async function findResRobotStopId(stopName) {
   return match.extId;
 }
 
-function renderDepartureRowsHtml(departures) {
+function renderDepartureRowsHtml(departures, stopLat, stopLon) {
   if (!departures.length) return `<div class="db-empty">Inga kommande avgångar hittades</div>`;
   return departures.slice(0, 12).map((d, i) => {
     // Linjenumret plockas ut som SIFFRORNA i namnet, oavsett vad som
@@ -1720,7 +1720,7 @@ function renderDepartureRowsHtml(departures) {
     // vit text på ikonen, så den syns bättre.
     const lineTextColor = lineColor.toLowerCase() === "#f9a825" ? "#1a1205" : "#ffffff";
     return `
-      <div class="db-row ${i % 2 === 0 ? "db-row-a" : "db-row-b"}" onclick="window.showLineForDepartureRow('${line.replace(/'/g, "\\'")}')">
+      <div class="db-row ${i % 2 === 0 ? "db-row-a" : "db-row-b"}" onclick="window.showLineForDepartureRow('${line.replace(/'/g, "\\'")}', ${stopLat}, ${stopLon})">
         <span class="db-line" style="background:${lineColor};color:${lineTextColor};">${line}</span>
         <span class="db-dest">${dest}</span>
         <span class="db-time">${time}</span>
@@ -1730,10 +1730,9 @@ function renderDepartureRowsHtml(departures) {
 }
 
 // Hittar en representativ tripInfo (med routeId, färg m.m.) för ett
-// linjenummer — vi har bara siffran i ResRobot-datan, inte en
-// koppling till vår egen realtidsdata direkt, så vi slår upp den
-// första matchande resan i vår redan laddade tabell. Cachat per
-// linjenummer så vi inte söker igenom alla 47 000+ resor varje gång.
+// linjenummer — bara för FÄRGSÄTTNING i listan (tillräckligt bra även
+// om det råkar bli fel STAD, eftersom färgen ändå oftast stämmer för
+// samma sifferkategori). Cachat per linjenummer.
 const tripInfoByLineCache = new Map();
 function findTripInfoForLine(lineNumber) {
   if (tripInfoByLineCache.has(lineNumber)) return tripInfoByLineCache.get(lineNumber);
@@ -1744,8 +1743,54 @@ function findTripInfoForLine(lineNumber) {
   tripInfoByLineCache.set(lineNumber, found);
   return found;
 }
-window.showLineForDepartureRow = function (lineNumber) {
-  const info = findTripInfoForLine(lineNumber);
+
+// Hittar den GEOGRAFISKT NÄRMASTE matchande linjen för klick-visning
+// på kartan — samma nummer (t.ex. "5") kan finnas som helt olika
+// linjer i flera olika städer (Malmö, Lund, Helsingborg...), så bara
+// FÖRSTA träffen (ovan) räckte inte: den kunde peka på en linje i en
+// helt annan del av Skåne än den hållplats man faktiskt tittar på.
+const bestTripInfoForLineCache = new Map();
+async function findBestTripInfoForLine(lineNumber, refLat, refLon) {
+  const cacheKey = `${lineNumber}|${refLat}|${refLon}`;
+  if (bestTripInfoForLineCache.has(cacheKey)) return bestTripInfoForLineCache.get(cacheKey);
+  const candidatesByRouteId = new Map();
+  for (const info of tripInfoByTripId.values()) {
+    if (info.line === lineNumber && info.routeId && !candidatesByRouteId.has(info.routeId)) {
+      candidatesByRouteId.set(info.routeId, info);
+    }
+  }
+  let found = null;
+  if (candidatesByRouteId.size === 0) {
+    found = null;
+  } else if (candidatesByRouteId.size === 1 || refLat == null || refLon == null || Number.isNaN(refLat) || Number.isNaN(refLon)) {
+    found = candidatesByRouteId.values().next().value;
+  } else {
+    try {
+      const routes = await ensureRouteShapesLoaded();
+      let bestDist = Infinity, bestInfo = null;
+      const cosLat = Math.cos((refLat * Math.PI) / 180);
+      for (const info of candidatesByRouteId.values()) {
+        const route = routes[info.routeId];
+        if (!route || !route.points) continue;
+        let minDist = Infinity;
+        for (const [plat, plon] of route.points) {
+          const dx = (plon - refLon) * cosLat * 111320, dy = (plat - refLat) * 111320;
+          const d = Math.hypot(dx, dy);
+          if (d < minDist) minDist = d;
+        }
+        if (minDist < bestDist) { bestDist = minDist; bestInfo = info; }
+      }
+      found = bestInfo || candidatesByRouteId.values().next().value;
+    } catch (err) {
+      found = candidatesByRouteId.values().next().value;
+    }
+  }
+  bestTripInfoForLineCache.set(cacheKey, found);
+  return found;
+}
+
+window.showLineForDepartureRow = async function (lineNumber, stopLat, stopLon) {
+  const info = await findBestTripInfoForLine(lineNumber, stopLat, stopLon);
   if (info) {
     showLineForRoute(info);
   } else {
@@ -1753,7 +1798,7 @@ window.showLineForDepartureRow = function (lineNumber) {
   }
 };
 
-async function openDepartureBoardPanel(stopName) {
+async function openDepartureBoardPanel(stopName, stopLat, stopLon) {
   departureBoardStopnameEl.textContent = stopName;
   departureBoardRowsEl.innerHTML = `<div class="db-loading">Laddar avgångar…</div>`;
   departureBoardPanel.classList.add("visible");
@@ -1763,7 +1808,7 @@ async function openDepartureBoardPanel(stopName) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const departures = data && data.Departure ? data.Departure : [];
-    departureBoardRowsEl.innerHTML = renderDepartureRowsHtml(departures);
+    departureBoardRowsEl.innerHTML = renderDepartureRowsHtml(departures, stopLat, stopLon);
   } catch (err) {
     console.warn("Kunde inte hämta avgångar (saknas en riktig ResRobot-nyckel i worker.js?):", err.message);
     departureBoardRowsEl.innerHTML = `<div class="db-empty">Kunde inte hämta avgångar just nu</div>`;
@@ -2511,7 +2556,7 @@ function drawRealTrainStations(stations) {
     });
     const marker = L.marker([s.lat, s.lon], { icon }).addTo(trainStationsLayer);
     marker.bindTooltip(`${s.name}<br><span style="opacity:0.75;font-size:0.85em;">Tryck för att se tidtabell</span>`, { direction: "top", offset: [0, -12] });
-    marker.on("click", () => openDepartureBoardPanel(s.name));
+    marker.on("click", () => openDepartureBoardPanel(s.name, s.lat, s.lon));
     trainStationMarkers.set(s.name, { marker });
   }
   console.log(`Ritade ${trainStationMarkers.size} riktiga tågstationer från Trafiklabs data`);
