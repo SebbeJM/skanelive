@@ -1570,9 +1570,12 @@ function renderDepartureRowsHtml(departures) {
     const line = numMatch ? numMatch[0] : (d.name || "?");
     const time = (d.rtTime || d.time || "").slice(0, 5);
     const dest = d.direction || "";
+    const lineInfo = findTripInfoForLine(line);
+    const lineColor = lineInfo && lineInfo.color ? `#${lineInfo.color}` : "#f9a825";
+    const lineTextColor = lineInfo && lineInfo.textColor ? `#${lineInfo.textColor}` : "#1a1205";
     return `
       <div class="db-row" onclick="window.showLineForDepartureRow('${line.replace(/'/g, "\\'")}')">
-        <span class="db-line">${line}</span>
+        <span class="db-line" style="background:${lineColor};color:${lineTextColor};">${line}</span>
         <span class="db-dest">${dest}</span>
         <span class="db-time">${time}</span>
       </div>
@@ -1581,17 +1584,27 @@ function renderDepartureRowsHtml(departures) {
 }
 
 // Hittar en representativ tripInfo (med routeId, färg m.m.) för ett
-// linjenummer från avgångslistan — vi har bara siffran där (ResRobot-
-// data), inte en koppling till vår egen realtidsdata direkt, så vi
-// slår upp den första matchande resan i vår redan laddade tabell.
-window.showLineForDepartureRow = function (lineNumber) {
+// linjenummer — vi har bara siffran i ResRobot-datan, inte en
+// koppling till vår egen realtidsdata direkt, så vi slår upp den
+// första matchande resan i vår redan laddade tabell. Cachat per
+// linjenummer så vi inte söker igenom alla 47 000+ resor varje gång.
+const tripInfoByLineCache = new Map();
+function findTripInfoForLine(lineNumber) {
+  if (tripInfoByLineCache.has(lineNumber)) return tripInfoByLineCache.get(lineNumber);
+  let found = null;
   for (const info of tripInfoByTripId.values()) {
-    if (info.line === lineNumber) {
-      showLineForRoute(info);
-      return;
-    }
+    if (info.line === lineNumber) { found = info; break; }
   }
-  console.warn(`Hittade ingen ruttdata för linje ${lineNumber}`);
+  tripInfoByLineCache.set(lineNumber, found);
+  return found;
+}
+window.showLineForDepartureRow = function (lineNumber) {
+  const info = findTripInfoForLine(lineNumber);
+  if (info) {
+    showLineForRoute(info);
+  } else {
+    console.warn(`Hittade ingen ruttdata för linje ${lineNumber}`);
+  }
 };
 
 async function openDepartureBoardPanel(stopName) {
