@@ -1363,12 +1363,14 @@ async function showLineForRoute(tripInfo) {
 }
 
 // Anropas från "Se linje"-knappen i ett fordons vanliga popup-ruta.
-window.showLineForVehicle = function (id) {
+window.showLineForVehicle = async function (id) {
   const entry = markers.get(id);
   if (entry && entry.tripInfo) {
-    showLineForRoute(entry.tripInfo);
-    // Uppdaterar popupens knapp direkt (inte bara vid nästa
-    // automatiska uppdatering) så den byter till "Dölj linje" genast.
+    // MÅSTE vänta in showLineForRoute (asynkron — laddar route_shapes.json
+    // vid behov) innan popupen ritas om, annars uppdateras knappen med
+    // GAMMAL status (currentRouteId hinner inte sättas än) och verkar
+    // vänta 1-2 sekunder innan den rättar till sig vid nästa pollning.
+    await showLineForRoute(entry.tripInfo);
     if (entry.pinned) entry.popup.setContent(renderPopupHtml(entry.popupBaseHtml, entry.pinned, id));
     return;
   }
