@@ -1647,6 +1647,27 @@ function debounce(fn, delayMs) {
     timer = setTimeout(() => fn(...args), delayMs);
   };
 }
+// Ungefärlig bounding box för Skåne (WGS84). Utesluter t.ex. Köpenhamn
+// (lon ~12.55) men inkluderar Helsingborg (~12.69) och hela östra Skåne.
+const SKANE_BOUNDS = {
+  latMin: 55.30,
+  latMax: 56.55,
+  lonMin: 12.67,
+  lonMax: 14.60,
+};
+function isStopInSkane(stop) {
+  const lat = parseFloat(stop.lat);
+  const lon = parseFloat(stop.lon);
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    return (
+      lat >= SKANE_BOUNDS.latMin && lat <= SKANE_BOUNDS.latMax &&
+      lon >= SKANE_BOUNDS.lonMin && lon <= SKANE_BOUNDS.lonMax
+    );
+  }
+  // Saknas koordinater: behåll hellre än att kasta bort (ovanligt).
+  return true;
+}
+
 function setupStopAutocomplete(inputEl, dropdownEl, onSelect) {
   const runSearch = debounce(async (query) => {
     if (query.trim().length < 2) {
@@ -1661,6 +1682,7 @@ function setupStopAutocomplete(inputEl, dropdownEl, onSelect) {
       const matches = (data.stopLocationOrCoordLocation || [])
         .map((x) => x.StopLocation)
         .filter(Boolean)
+        .filter(isStopInSkane)
         .slice(0, 8);
       if (!matches.length) {
         dropdownEl.classList.remove("visible");
