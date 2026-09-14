@@ -284,6 +284,105 @@
   .line-stop-label::before {
     display: none;
   }
+  /* Avgångstavla — stylad som en riktig elektronisk pendlartavla. */
+  .departure-board-popup .leaflet-popup-content-wrapper {
+    background: #12181f;
+    border-radius: 4px;
+    padding: 0;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+  }
+  .departure-board-popup .leaflet-popup-content {
+    margin: 0;
+    width: 300px !important;
+  }
+  .departure-board-popup .leaflet-popup-tip {
+    background: #12181f;
+  }
+  .departure-board {
+    color: #fff;
+    font-family: inherit;
+  }
+  .db-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.7rem;
+    border-bottom: 2px solid #3b82f6;
+    background: #1a2230;
+    border-radius: 4px 4px 0 0;
+  }
+  .db-header-icon {
+    color: #3b82f6;
+    flex-shrink: 0;
+    display: flex;
+  }
+  .db-header-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+    line-height: 1.1;
+  }
+  .db-header-sub {
+    font-size: 0.68rem;
+    color: #8f9bb0;
+  }
+  .db-header-stopname {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: #cdd5e0;
+    text-align: right;
+    max-width: 130px;
+  }
+  .db-columns {
+    display: grid;
+    grid-template-columns: 46px 1fr 52px;
+    padding: 0.3rem 0.7rem 0.2rem;
+    font-size: 0.62rem;
+    color: #6d7a90;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .db-row {
+    display: grid;
+    grid-template-columns: 46px 1fr 52px;
+    align-items: center;
+    padding: 0.42rem 0.7rem;
+    font-size: 0.82rem;
+  }
+  .db-row-a {
+    background: #1a2230;
+  }
+  .db-row-b {
+    background: #12181f;
+  }
+  .db-line {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f9a825;
+    color: #1a1205;
+    font-weight: 700;
+    border-radius: 3px;
+    padding: 0.15rem 0.4rem;
+    width: fit-content;
+    font-size: 0.76rem;
+  }
+  .db-dest {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-right: 0.5rem;
+  }
+  .db-time {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #e5eaf0;
+  }
+  .db-empty, .db-loading {
+    padding: 1rem 0.7rem;
+    color: #8f9bb0;
+    font-size: 0.8rem;
+    text-align: center;
+  }
   .leaflet-popup-content-wrapper {
     border-radius: 4px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -1336,8 +1435,88 @@ function renderVisibleBusStops() {
     if (!bounds.contains([s.lat, s.lon])) continue;
     L.marker([s.lat, s.lon], { icon: busStopIcon() })
       .bindTooltip(s.name, { direction: "top", offset: [0, -10] })
-      .bindPopup(`<div class="popup-content"><b>${s.name}</b></div>`, { offset: [0, -10], autoPan: false })
+      .bindPopup(`<div class="departure-board"><div class="db-loading">Laddar avgångar…</div></div>`, {
+        offset: [0, -10],
+        autoPan: false,
+        maxWidth: 320,
+        className: "departure-board-popup",
+      })
+      .on("popupopen", (e) => loadDepartureBoard(s.name, e.popup))
       .addTo(busStopsLayer);
+  }
+}
+
+// ============================================================
+// Avgångstavla — visas när man klickar/öppnar en busshållplats,
+// stylad som en riktig elektronisk pendlartavla. Hämtar riktig data
+// via ResRobot (kräver att en riktig RESROBOT_KEY är insatt i
+// worker.js — annars visas ett tydligt felmeddelande istället).
+// ============================================================
+const resRobotStopIdCache = new Map(); // hållplatsnamn -> ResRobot-ID, så vi bara söker EN gång per hållplats
+const BUS_ICON_SVG_SMALL = `<svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="4" width="18" height="12" rx="3" fill="currentColor"/><rect x="5.5" y="6.3" width="5.5" height="4" rx="0.6" fill="#12181f"/><rect x="13" y="6.3" width="5.5" height="4" rx="0.6" fill="#12181f"/><rect x="4.5" y="15" width="15" height="2" fill="currentColor"/><circle cx="7.5" cy="18.3" r="1.7" fill="currentColor"/><circle cx="16.5" cy="18.3" r="1.7" fill="currentColor"/></svg>`;
+
+async function findResRobotStopId(stopName) {
+  if (resRobotStopIdCache.has(stopName)) return resRobotStopIdCache.get(stopName);
+  const res = await fetch(`${PROXY_URL}/resrobot/stops?name=${encodeURIComponent(stopName)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  const match = data && data.stopLocationOrCoordLocation && data.stopLocationOrCoordLocation[0] && data.stopLocationOrCoordLocation[0].StopLocation;
+  if (!match) throw new Error("Ingen matchande hållplats hittades hos ResRobot");
+  resRobotStopIdCache.set(stopName, match.extId);
+  return match.extId;
+}
+
+function renderDepartureBoardHtml(stopName, departures) {
+  const rows = departures.slice(0, 10).map((d, i) => {
+    const line = (d.name || "").replace(/^(Buss|Buss:)\s*/i, "").trim() || "?";
+    const time = d.rtTime || d.time || "";
+    const dest = d.direction || "";
+    return `
+      <div class="db-row ${i % 2 === 0 ? "db-row-a" : "db-row-b"}">
+        <span class="db-line">${line}</span>
+        <span class="db-dest">${dest}</span>
+        <span class="db-time">${time.slice(0, 5)}</span>
+      </div>
+    `;
+  }).join("");
+  return `
+    <div class="departure-board">
+      <div class="db-header">
+        <span class="db-header-icon">${BUS_ICON_SVG_SMALL}</span>
+        <div class="db-header-text">
+          <div class="db-header-title">Buss</div>
+          <div class="db-header-sub">Avgångar</div>
+        </div>
+        <div class="db-header-stopname">${stopName}</div>
+      </div>
+      <div class="db-columns">
+        <span>Linje</span><span>Mot</span><span>Avgång</span>
+      </div>
+      ${rows || `<div class="db-empty">Inga kommande avgångar hittades</div>`}
+    </div>
+  `;
+}
+
+async function loadDepartureBoard(stopName, popup) {
+  try {
+    const stopId = await findResRobotStopId(stopName);
+    const res = await fetch(`${PROXY_URL}/resrobot/departures?id=${encodeURIComponent(stopId)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const departures = data && data.Departure ? data.Departure : [];
+    popup.setContent(renderDepartureBoardHtml(stopName, departures));
+  } catch (err) {
+    console.warn("Kunde inte hämta avgångar (saknas en riktig ResRobot-nyckel i worker.js?):", err.message);
+    popup.setContent(`
+      <div class="departure-board">
+        <div class="db-header">
+          <span class="db-header-icon">${BUS_ICON_SVG_SMALL}</span>
+          <div class="db-header-text"><div class="db-header-title">Buss</div><div class="db-header-sub">Avgångar</div></div>
+          <div class="db-header-stopname">${stopName}</div>
+        </div>
+        <div class="db-empty">Kunde inte hämta avgångar just nu</div>
+      </div>
+    `);
   }
 }
 
