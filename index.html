@@ -349,6 +349,41 @@
     gap: 0.4rem;
     margin-bottom: 0.5rem;
   }
+  .tp-input-wrap {
+    position: relative;
+    flex: 1;
+    margin-bottom: 0.5rem;
+  }
+  .tp-field-row .tp-input-wrap {
+    margin-bottom: 0;
+  }
+  .tp-suggestions {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    margin-top: 2px;
+    max-height: 180px;
+    overflow-y: auto;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  }
+  .tp-suggestions.visible {
+    display: block;
+  }
+  .tp-suggestion {
+    padding: 0.4rem 0.55rem;
+    font-size: 0.82rem;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .tp-suggestion:hover {
+    background: var(--input-bg-hover);
+  }
   #trip-planner-panel input {
     width: 100%;
     box-sizing: border-box;
@@ -440,6 +475,39 @@
   .ti-step-text span {
     color: var(--muted);
     font-size: 0.78rem;
+  }
+  #ti-tabs {
+    display: flex;
+    gap: 0.3rem;
+    margin-bottom: 0.4rem;
+  }
+  .ti-tab {
+    flex: 1;
+    text-align: center;
+    padding: 0.32rem 0;
+    border: 1px solid var(--line);
+    border-radius: 5px 5px 0 0;
+    border-bottom: none;
+    background: var(--input-bg);
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .ti-tab.active {
+    background: var(--accent);
+    color: #0e0e0e;
+    border-color: var(--accent);
+  }
+  #ti-fastest-label {
+    font-size: 0.76rem;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    display: none;
+  }
+  #ti-fastest-label.visible {
+    display: block;
   }
   #ti-buy-ticket {
     display: block;
@@ -599,7 +667,7 @@
     border-color: var(--accent);
     background: var(--input-bg-hover);
   }
-  #search-btn, #filter-btn, #locate-btn {
+  #search-btn, #filter-btn, #locate-btn, #trip-planner-btn {
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -611,7 +679,13 @@
     padding: 0.4rem 0.55rem;
     cursor: pointer;
   }
-  #search-btn:hover, #filter-btn:hover, #locate-btn:hover {
+  #trip-planner-btn {
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+  #search-btn:hover, #filter-btn:hover, #locate-btn:hover, #trip-planner-btn:hover {
     border-color: var(--muted);
   }
   #locate-btn.active {
@@ -1018,8 +1092,9 @@
       <button id="locate-btn" aria-label="Visa min position">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="1" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="23"></line><line x1="1" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="23" y2="12"></line></svg>
       </button>
-      <button id="trip-planner-btn" aria-label="Reseplanerare">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="5" r="2"></circle><path d="M8 19h8a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4H8"></path></svg>
+      <button id="trip-planner-btn" aria-label="Sök resa">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="5" r="2"></circle><path d="M8 19h8a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4H8"></path></svg>
+        <span>Sök resa</span>
       </button>
       <a href="contact.html" id="contact-btn">Kontakt</a>
       <div id="status"><span class="dot"></span>ansluter…</div>
@@ -1069,12 +1144,18 @@
         <button id="tp-panel-close" aria-label="Stäng">&times;</button>
       </div>
       <div class="tp-field-row">
-        <input type="text" id="tp-from-input" placeholder="Från (hållplats)">
+        <div class="tp-input-wrap">
+          <input type="text" id="tp-from-input" placeholder="Från (hållplats)" autocomplete="off">
+          <div class="tp-suggestions" id="tp-from-suggestions"></div>
+        </div>
         <button id="tp-use-location-btn" aria-label="Använd min position" title="Använd min position">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="1" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="23"></line><line x1="1" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="23" y2="12"></line></svg>
         </button>
       </div>
-      <input type="text" id="tp-to-input" placeholder="Till (hållplats)">
+      <div class="tp-input-wrap">
+        <input type="text" id="tp-to-input" placeholder="Till (hållplats)" autocomplete="off">
+        <div class="tp-suggestions" id="tp-to-suggestions"></div>
+      </div>
       <button id="tp-search-btn">Sök resa</button>
       <div id="tp-status"></div>
     </div>
@@ -1083,6 +1164,8 @@
         <span>Din resa</span>
         <button id="ti-panel-close" aria-label="Stäng">&times;</button>
       </div>
+      <div id="ti-tabs"></div>
+      <div id="ti-fastest-label"></div>
       <div id="ti-steps"></div>
       <a id="ti-buy-ticket" href="https://www.skanetrafiken.se/" target="_blank" rel="noopener">Köp biljett</a>
     </div>
@@ -1290,6 +1373,71 @@ const tiPanelClose = document.getElementById("ti-panel-close");
 let tripLegsLayer; // sätts efter att kartan (map) skapats längre ner
 
 let tpOriginCoords = null; // sätts av "använd min position"-knappen
+let tpFromStopId = null; // sätts direkt när man klickar ett förslag (slipper söka igen vid Sök-klick)
+let tpToStopId = null;
+
+// Autoförslag medan man skriver, precis som Google Maps — söker (med
+// liten fördröjning så vi inte skickar en förfrågan per tangenttryck)
+// via samma ResRobot-sökning avgångstavlan redan använder, och visar
+// en liten klickbar lista under fältet.
+function debounce(fn, delayMs) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delayMs);
+  };
+}
+function setupStopAutocomplete(inputEl, dropdownEl, onSelect) {
+  const runSearch = debounce(async (query) => {
+    if (query.trim().length < 2) {
+      dropdownEl.classList.remove("visible");
+      dropdownEl.innerHTML = "";
+      return;
+    }
+    try {
+      const res = await fetch(`${PROXY_URL}/resrobot/stops?name=${encodeURIComponent(query)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const matches = (data.stopLocationOrCoordLocation || [])
+        .map((x) => x.StopLocation)
+        .filter(Boolean)
+        .slice(0, 8);
+      if (!matches.length) {
+        dropdownEl.classList.remove("visible");
+        dropdownEl.innerHTML = "";
+        return;
+      }
+      dropdownEl.innerHTML = matches
+        .map((m) => `<div class="tp-suggestion" data-name="${m.name.replace(/"/g, "&quot;")}" data-extid="${m.extId}">${m.name}</div>`)
+        .join("");
+      dropdownEl.classList.add("visible");
+    } catch (err) {
+      // Tyst — bara ingen förslagslista den gången.
+    }
+  }, 250);
+  inputEl.addEventListener("input", () => {
+    onSelect(null); // man skriver fritt igen -> glöm en tidigare vald hållplats
+    runSearch(inputEl.value);
+  });
+  dropdownEl.addEventListener("mousedown", (e) => {
+    // mousedown (inte click) så den hinner köras INNAN inputens egen
+    // blur-händelse hinner dölja listan.
+    const item = e.target.closest(".tp-suggestion");
+    if (!item) return;
+    inputEl.value = item.dataset.name;
+    onSelect(item.dataset.extid);
+    dropdownEl.classList.remove("visible");
+    dropdownEl.innerHTML = "";
+  });
+  inputEl.addEventListener("blur", () => {
+    setTimeout(() => dropdownEl.classList.remove("visible"), 150);
+  });
+  inputEl.addEventListener("focus", () => {
+    if (dropdownEl.innerHTML) dropdownEl.classList.add("visible");
+  });
+}
+setupStopAutocomplete(tpFromInput, document.getElementById("tp-from-suggestions"), (id) => { tpFromStopId = id; });
+setupStopAutocomplete(tpToInput, document.getElementById("tp-to-suggestions"), (id) => { tpToStopId = id; });
 
 tripPlannerBtn.addEventListener("click", () => {
   tripPlannerPanel.classList.toggle("visible");
@@ -1298,6 +1446,7 @@ tpPanelClose.addEventListener("click", () => tripPlannerPanel.classList.remove("
 tiPanelClose.addEventListener("click", () => {
   tripItineraryPanel.classList.remove("visible");
   tripLegsLayer.clearLayers();
+  document.getElementById("ti-tabs").innerHTML = "";
 });
 
 tpUseLocationBtn.addEventListener("click", () => {
@@ -1331,16 +1480,70 @@ function parseISODuration(iso) {
 // Färg/ikon-kategori för ett steg — läser texten på samma sätt som
 // avgångstavlans reservlösning, eftersom vi inte alltid kan koppla
 // steget exakt till vår egen realtidsdata.
+// Läser ResRobots STRUKTURERADE kategorifält (catOut/cls) istället för
+// att gissa via text — mycket säkrare. Faller tillbaka till text bara
+// om de strukturerade fälten skulle saknas.
 function categorizeStep(leg) {
   if (leg.type === "WALK") return { label: "G", color: "#6d7a90" };
-  const name = (leg.name || (leg.Product && leg.Product[0] && leg.Product[0].name) || "").toLowerCase();
+  const product = leg.Product && leg.Product[0];
+  const catOut = product && product.catOut;
+  const lineNum = (product && (product.displayNumber || product.line || product.num)) || "";
+  const name = (leg.name || (product && product.name) || "").toLowerCase();
+  if (catOut === "JPT") return { label: lineNum || "T", color: "#645fa2" }; // Pågatåg
+  if (catOut && /^J/.test(catOut) && name.includes("öresundståg")) return { label: lineNum || "T", color: "#a3a9ad" };
+  if (catOut === "BXB" || name.includes("skåneexpressen")) return { label: lineNum || "B", color: "#f9a825" };
+  if (catOut === "BLT" || catOut === "BRE") {
+    // Vanlig länstrafik-buss — samma tumregel som resten av sidan
+    // (kort nummer = stadsbuss/grön, 3-siffrigt = regionbuss/orange).
+    return lineNum.length === 3 ? { label: lineNum, color: "#f9a825" } : { label: lineNum || "B", color: "#2e7d32" };
+  }
+  // Reservläge (om catOut skulle saknas): samma textgissning som förut.
   if (name.includes("öresundståg")) return { label: "T", color: "#a3a9ad" };
   if (name.includes("pågatåg") || name.includes("tåg")) return { label: "T", color: "#645fa2" };
-  if (name.includes("skåneexpressen")) return { label: "B", color: "#f9a825" };
   const numMatch = name.match(/\d+/);
   const num = numMatch ? numMatch[0] : "";
   if (num.length === 3) return { label: num, color: "#f9a825" };
   return { label: num || "B", color: "#2e7d32" };
+}
+
+// Google-stilens "encoded polyline"-format — vanligast förekommande
+// för den här typen av API, men vi vet inte säkert att ResRobot
+// använder just det (deras dokumentation visar inte fältet tydligt).
+function decodeGooglePolyline(encoded) {
+  const points = [];
+  let index = 0, lat = 0, lon = 0;
+  while (index < encoded.length) {
+    let shift = 0, result = 0, byte;
+    do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    lon += (result & 1) ? ~(result >> 1) : (result >> 1);
+    points.push([lat / 1e5, lon / 1e5]);
+  }
+  return points;
+}
+// Provar flera rimliga platser/format för polylinjen (poly=1 aktiverar
+// den i anropet, men exakt fältnamn är okänt utan att se ett riktigt
+// svar) — returnerar null om inget av dem känns igen, så anroparen kan
+// falla tillbaka på den gamla logiken.
+function extractLegPolyline(leg) {
+  const candidates = [leg.Polyline, leg.polyline, leg.poly, leg.Origin && leg.Origin.polyline];
+  for (const c of candidates) {
+    if (!c) continue;
+    if (typeof c === "string" && c.length > 10) {
+      try {
+        const pts = decodeGooglePolyline(c);
+        if (pts.length > 1) return pts;
+      } catch (err) { /* prova nästa kandidat */ }
+    }
+    if (c && Array.isArray(c.crd) && c.crd.length > 3) {
+      const pts = [];
+      for (let i = 0; i < c.crd.length - 1; i += 2) pts.push([c.crd[i] / 1e6, c.crd[i + 1] / 1e6]);
+      if (pts.length > 1) return pts;
+    }
+  }
+  return null;
 }
 
 function renderItinerarySteps(legs) {
@@ -1372,14 +1575,23 @@ async function drawTripLegsOnMap(legs) {
     const oLat = leg.Origin && leg.Origin.lat, oLon = leg.Origin && leg.Origin.lon;
     const dLat = leg.Destination && leg.Destination.lat, dLon = leg.Destination && leg.Destination.lon;
     if (oLat == null || dLat == null) continue;
-    allPoints.push([oLat, oLon], [dLat, dLon]);
     const cat = categorizeStep(leg);
-    if (leg.type === "WALK") {
-      L.polyline([[oLat, oLon], [dLat, dLon]], {
-        color: cat.color, weight: 3, opacity: 0.8, dashArray: "4,6",
-      }).addTo(tripLegsLayer);
+    // Riktig linjegeometri från ResRobot (poly=1), om den hittas —
+    // gäller BÅDE gångdelen (följer då faktiska gator/stigar) och
+    // buss/tåg-etapper. Detta är alltid bäst om det finns.
+    const realPolyline = extractLegPolyline(leg);
+    if (realPolyline) {
+      allPoints.push(...realPolyline);
+      L.polyline(realPolyline, leg.type === "WALK"
+        ? { color: cat.color, weight: 3, opacity: 0.8, dashArray: "4,6" }
+        : { color: cat.color, weight: 5, opacity: 0.9 }
+      ).addTo(tripLegsLayer);
       continue;
     }
+    // Gångetapper utan riktig geometri ritas inte ut alls — hellre
+    // inget än en missvisande rak fågelväg. Syns ändå i stegtexten.
+    if (leg.type === "WALK") continue;
+    allPoints.push([oLat, oLon], [dLat, dLon]);
     const nameForLine = leg.name || (leg.Product && leg.Product[0] && leg.Product[0].name) || "";
     const numMatch = nameForLine.match(/\d+/);
     let drawn = false;
@@ -1389,9 +1601,19 @@ async function drawTripLegsOnMap(legs) {
         try {
           const routes = await ensureRouteShapesLoaded();
           const route = routes[info.routeId];
-          if (route && route.points) {
-            L.polyline(route.points, { color: cat.color, weight: 5, opacity: 0.9 }).addTo(tripLegsLayer);
-            drawn = true;
+          if (route && route.points && route.points.length > 1) {
+            // Bara STRÄCKAN från påstigning till avstigning, inte hela
+            // linjens sträckning — samma teknik som redan används för
+            // den simulerade Öresundståg-positioneringen.
+            const idxOrigin = findNearestPointIndex(route.points, [oLat, oLon]);
+            const idxDest = findNearestPointIndex(route.points, [dLat, dLon]);
+            const segment = idxOrigin <= idxDest
+              ? route.points.slice(idxOrigin, idxDest + 1)
+              : route.points.slice(idxDest, idxOrigin + 1).reverse();
+            if (segment.length >= 2) {
+              L.polyline(segment, { color: cat.color, weight: 5, opacity: 0.9 }).addTo(tripLegsLayer);
+              drawn = true;
+            }
           }
         } catch (err) { /* faller tillbaka på raklinjen nedan */ }
       }
@@ -1403,18 +1625,57 @@ async function drawTripLegsOnMap(legs) {
   if (allPoints.length) map.fitBounds(allPoints, { padding: [60, 60] });
 }
 
-async function resolveStopParam(inputValue, coords, prefix) {
+async function resolveStopParam(inputValue, coords, stopId, prefix) {
   if (coords) return { [`${prefix}CoordLat`]: coords.lat, [`${prefix}CoordLong`]: coords.lon };
+  if (stopId) return { [`${prefix}Id`]: stopId };
   if (!inputValue.trim()) return null;
+  // Fallback om man skrev manuellt utan att klicka ett förslag i listan.
   const id = await findResRobotStopId(inputValue.trim());
   return { [`${prefix}Id`]: id };
+}
+
+function isoDurationToMinutes(iso) {
+  if (!iso) return Infinity;
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?/.exec(iso);
+  if (!match) return Infinity;
+  return parseInt(match[1] || 0, 10) * 60 + parseInt(match[2] || 0, 10);
+}
+
+let currentTrips = [];
+let currentTripIndex = 0;
+const tiTabsEl = document.getElementById("ti-tabs");
+const tiFastestLabelEl = document.getElementById("ti-fastest-label");
+
+async function showTripAtIndex(index) {
+  currentTripIndex = index;
+  const legs = currentTrips[index].LegList && currentTrips[index].LegList.Leg ? currentTrips[index].LegList.Leg : [];
+  renderItinerarySteps(legs);
+  await drawTripLegsOnMap(legs);
+  tiFastestLabelEl.classList.toggle("visible", index === 0);
+  tiFastestLabelEl.textContent = "Snabbaste vägen";
+  for (const tabEl of tiTabsEl.children) {
+    tabEl.classList.toggle("active", Number(tabEl.dataset.index) === index);
+  }
+}
+
+function renderTripTabs() {
+  if (currentTrips.length <= 1) {
+    tiTabsEl.innerHTML = "";
+    return;
+  }
+  tiTabsEl.innerHTML = currentTrips
+    .map((_, i) => `<button class="ti-tab" data-index="${i}">${i + 1}</button>`)
+    .join("");
+  for (const tabEl of tiTabsEl.children) {
+    tabEl.addEventListener("click", () => showTripAtIndex(Number(tabEl.dataset.index)));
+  }
 }
 
 tpSearchBtn.addEventListener("click", async () => {
   tpStatus.textContent = "Söker resa…";
   try {
-    const originParams = await resolveStopParam(tpFromInput.value, tpOriginCoords, "origin");
-    const destParams = await resolveStopParam(tpToInput.value, null, "dest");
+    const originParams = await resolveStopParam(tpFromInput.value, tpOriginCoords, tpFromStopId, "origin");
+    const destParams = await resolveStopParam(tpToInput.value, null, tpToStopId, "dest");
     if (!originParams || !destParams) {
       tpStatus.textContent = "Fyll i både från och till.";
       return;
@@ -1428,9 +1689,10 @@ tpSearchBtn.addEventListener("click", async () => {
       tpStatus.textContent = "Ingen resa hittades.";
       return;
     }
-    const legs = trips[0].LegList && trips[0].LegList.Leg ? trips[0].LegList.Leg : [];
-    renderItinerarySteps(legs);
-    await drawTripLegsOnMap(legs);
+    // Snabbaste (kortast varaktighet) alltid som flik 1.
+    currentTrips = [...trips].sort((a, b) => isoDurationToMinutes(a.duration) - isoDurationToMinutes(b.duration));
+    renderTripTabs();
+    await showTripAtIndex(0);
     tripItineraryPanel.classList.add("visible");
     tripPlannerPanel.classList.remove("visible");
     tpStatus.textContent = "";
