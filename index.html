@@ -2406,7 +2406,13 @@ async function loadRouteColors() {
     drawAllRailLines(railLinesData.lines);
     console.log(`Ritade ${railLinesData.lines.length} tåglinjer`);
     drawRealTrainStations(stationsData.stations);
-    await drawAllMutedLines();
+    // TILLFÄLLIGT AVSTÄNGD (2026-09-14): route_shapes.json innehåller
+    // fortfarande felaktiga raka "genvägs"-sträckor för vissa linjer
+    // (syns som spikraka streck tvärs över kartan) — stäng av
+    // uppritningen helt tills byggjobbet körts om med den förbättrade
+    // kvalitetskontrollen OCH det verifierats se rätt ut, istället för
+    // att visa detta för besökare under tiden.
+    // await drawAllMutedLines();
   } catch (err) {
     console.warn("Kunde inte ladda den servergenererade linjedatan:", err);
   }
