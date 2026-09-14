@@ -32,6 +32,15 @@
     --accent: #ff8552;
     --accent-dim: #c9612f;
   }
+  html.light-mode {
+    --bg: #f3f5f1;
+    --panel: #ffffff;
+    --line: #dde2da;
+    --fg: #1a201b;
+    --muted: #5a6b5f;
+    --accent: #e0672f;
+    --accent-dim: #b8501f;
+  }
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
@@ -179,6 +188,10 @@
   .base-map-layer {
     filter: brightness(1.12);
   }
+  html.light-mode .place-labels-layer,
+  html.light-mode .base-map-layer {
+    filter: none;
+  }
   .vehicle-marker {
     transition: transform 6.5s linear;
     will-change: transform;
@@ -284,75 +297,63 @@
   .line-stop-label::before {
     display: none;
   }
-  /* Avgångstavla — stylad som en riktig elektronisk pendlartavla. */
-  .departure-board-popup .leaflet-popup-content-wrapper {
-    background: #12181f;
-    border-radius: 4px;
-    padding: 0;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+  /* Avgångstavla — fast ruta nere till höger (inte en flytande
+     kart-popup), stylad som en riktig elektronisk pendlartavla. */
+  #departure-board-panel {
+    display: none;
+    position: absolute;
+    bottom: 22px;
+    right: 1.25rem;
+    z-index: 1150;
+    width: 300px;
+    max-width: 90vw;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: #1e2d4a;
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.55);
   }
-  .departure-board-popup .leaflet-popup-content {
-    margin: 0;
-    width: 300px !important;
+  #departure-board-panel.visible {
+    display: block;
   }
-  .departure-board-popup .leaflet-popup-tip {
-    background: #12181f;
-  }
-  .departure-board {
-    color: #fff;
-    font-family: inherit;
-  }
-  .db-header {
+  .db-panel-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.6rem 0.7rem;
-    border-bottom: 2px solid #3b82f6;
-    background: #1a2230;
-    border-radius: 4px 4px 0 0;
+    padding: 0.6rem 0.8rem;
+    background: #24365a;
+    border-radius: 8px 8px 0 0;
+    position: sticky;
+    top: 0;
   }
-  .db-header-icon {
-    color: #3b82f6;
-    flex-shrink: 0;
-    display: flex;
-  }
-  .db-header-title {
+  #db-panel-stopname {
     font-weight: 700;
-    font-size: 0.85rem;
-    line-height: 1.1;
+    font-size: 0.88rem;
+    color: #fff;
   }
-  .db-header-sub {
-    font-size: 0.68rem;
-    color: #8f9bb0;
-  }
-  .db-header-stopname {
-    margin-left: auto;
-    font-size: 0.75rem;
-    color: #cdd5e0;
-    text-align: right;
-    max-width: 130px;
-  }
-  .db-columns {
-    display: grid;
-    grid-template-columns: 46px 1fr 52px;
-    padding: 0.3rem 0.7rem 0.2rem;
-    font-size: 0.62rem;
-    color: #6d7a90;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+  #db-panel-close {
+    background: none;
+    border: none;
+    color: #cdd8ea;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.2rem;
   }
   .db-row {
     display: grid;
-    grid-template-columns: 46px 1fr 52px;
+    grid-template-columns: 42px 1fr 48px;
     align-items: center;
-    padding: 0.42rem 0.7rem;
-    font-size: 0.82rem;
+    gap: 0.5rem;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.85rem;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    cursor: pointer;
+    transition: background 0.15s;
   }
-  .db-row-a {
-    background: #1a2230;
-  }
-  .db-row-b {
-    background: #12181f;
+  .db-row:hover {
+    background: rgba(255,255,255,0.05);
   }
   .db-line {
     display: inline-flex;
@@ -362,24 +363,26 @@
     color: #1a1205;
     font-weight: 700;
     border-radius: 3px;
-    padding: 0.15rem 0.4rem;
+    padding: 0.1rem 0.3rem;
     width: fit-content;
-    font-size: 0.76rem;
+    max-width: 42px;
+    font-size: 0.72rem;
   }
   .db-dest {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding-right: 0.5rem;
+    color: #fff;
+    font-weight: 500;
   }
   .db-time {
     text-align: right;
     font-variant-numeric: tabular-nums;
-    color: #e5eaf0;
+    color: #dbe3f0;
   }
   .db-empty, .db-loading {
-    padding: 1rem 0.7rem;
-    color: #8f9bb0;
+    padding: 1rem 0.8rem;
+    color: #a7b3cc;
     font-size: 0.8rem;
     text-align: center;
   }
@@ -472,6 +475,52 @@
     gap: 0.5rem;
     font-size: 0.82rem;
     cursor: pointer;
+  }
+  .theme-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.7rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.82rem;
+  }
+  .theme-toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 38px;
+    height: 21px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .theme-toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+  }
+  .theme-toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--line);
+    border-radius: 999px;
+    transition: background 0.2s;
+  }
+  .theme-toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 17px;
+    height: 17px;
+    background: var(--fg);
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .theme-toggle-switch input:checked ~ .theme-toggle-track {
+    background: var(--accent);
+  }
+  .theme-toggle-switch input:checked ~ .theme-toggle-track .theme-toggle-thumb {
+    transform: translateX(17px);
   }
   #search-input {
     width: 100%;
@@ -750,8 +799,8 @@
       <span>Denna månad: <strong id="visitors-month">–</strong></span>
     </div>
     <div class="header-right">
-      <button id="filter-btn" aria-label="Filtrera fordonstyper">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+      <button id="filter-btn" aria-label="Anpassa">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"></line><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"></circle><line x1="4" y1="12" x2="20" y2="12"></line><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"></circle><line x1="4" y1="18" x2="20" y2="18"></line><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"></circle></svg>
       </button>
       <button id="search-btn" aria-label="Sök buss/tåg">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -763,11 +812,18 @@
       </button>
     </div>
     <div id="mobile-menu">
-      <button id="mobile-filter-btn">Filtrera fordon</button>
+      <button id="mobile-filter-btn">Anpassa</button>
       <a href="contact.html">Kontakt</a>
     </div>
     <div id="filter-panel">
       <label><input type="checkbox" id="show-rail-lines-checkbox" checked> Visa spår och tågstationer</label>
+      <div class="theme-toggle-row">
+        <span>Ljust läge</span>
+        <label class="theme-toggle-switch">
+          <input type="checkbox" id="theme-toggle-checkbox">
+          <span class="theme-toggle-track"><span class="theme-toggle-thumb"></span></span>
+        </label>
+      </div>
     </div>
     <div id="search-panel">
       <input id="search-input" type="text" placeholder="Linjenummer, t.ex. 5" autocomplete="off">
@@ -790,6 +846,13 @@
         <div id="line-hud-text"></div>
         <button id="line-hud-close">Dölj linje</button>
       </div>
+    </div>
+    <div id="departure-board-panel">
+      <div class="db-panel-header">
+        <span id="db-panel-stopname"></span>
+        <button id="db-panel-close" aria-label="Stäng">&times;</button>
+      </div>
+      <div id="db-panel-rows"></div>
     </div>
   </div>
 </div>
@@ -896,6 +959,8 @@ showRailLinesCheckbox.addEventListener("change", () => {
   }
 });
 
+const themeToggleCheckbox = document.getElementById("theme-toggle-checkbox");
+
 // ============================================================
 // Sök buss/tåg efter linjenummer
 // ============================================================
@@ -963,21 +1028,49 @@ const map = L.map("map", {
   zoomControl: true,
   attributionControl: true,
 });
-L.tileLayer(
-  `https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-  {
+// Läs sparat ljust/mörkt-läge INNAN kartplattorna skapas, så vi
+// slipper en synlig blixt av fel tema vid sidladdning.
+const THEME_STORAGE_KEY = "skanelive_theme";
+let isLightMode = localStorage.getItem(THEME_STORAGE_KEY) === "light";
+if (isLightMode) document.documentElement.classList.add("light-mode");
+
+function tileUrlsForTheme(light) {
+  const style = light ? "voyager" : "dark";
+  return {
+    base: `https://{s}.basemaps.cartocdn.com/rastertiles/${style}_nolabels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+    labels: `https://{s}.basemaps.cartocdn.com/rastertiles/${style}_only_labels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+  };
+}
+
+let baseMapLayer, placeLabelsLayer;
+function buildMapTileLayers(light) {
+  const urls = tileUrlsForTheme(light);
+  baseMapLayer = L.tileLayer(urls.base, {
     maxZoom: 20,
     className: "base-map-layer",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare &copy; <a href="https://carto.com/attributions">CARTO</a>',
-  }
-).addTo(map);
-L.tileLayer(
-  `https://{s}.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-  {
+  }).addTo(map);
+  placeLabelsLayer = L.tileLayer(urls.labels, {
     maxZoom: 20,
     className: "place-labels-layer",
-  }
-).addTo(map);
+  }).addTo(map);
+}
+buildMapTileLayers(isLightMode);
+
+// Byter både kartplattorna (kräver riktigt nya bildlager, inte bara
+// CSS-filter) och alla färgvariabler i gränssnittet.
+function setMapTheme(light) {
+  isLightMode = light;
+  document.documentElement.classList.toggle("light-mode", light);
+  localStorage.setItem(THEME_STORAGE_KEY, light ? "light" : "dark");
+  if (baseMapLayer) map.removeLayer(baseMapLayer);
+  if (placeLabelsLayer) map.removeLayer(placeLabelsLayer);
+  buildMapTileLayers(light);
+}
+themeToggleCheckbox.checked = isLightMode;
+themeToggleCheckbox.addEventListener("change", () => {
+  setMapTheme(themeToggleCheckbox.checked);
+});
 console.timeEnd("⏱ script start → map-objekt skapat");
 if (CARTO_API_KEY.includes("DIN_CARTO_NYCKEL")) {
   const banner = document.createElement("div");
@@ -1435,13 +1528,7 @@ function renderVisibleBusStops() {
     if (!bounds.contains([s.lat, s.lon])) continue;
     L.marker([s.lat, s.lon], { icon: busStopIcon() })
       .bindTooltip(s.name, { direction: "top", offset: [0, -10] })
-      .bindPopup(`<div class="departure-board"><div class="db-loading">Laddar avgångar…</div></div>`, {
-        offset: [0, -10],
-        autoPan: false,
-        maxWidth: 320,
-        className: "departure-board-popup",
-      })
-      .on("popupopen", (e) => loadDepartureBoard(s.name, e.popup))
+      .on("click", () => openDepartureBoardPanel(s.name))
       .addTo(busStopsLayer);
   }
 }
@@ -1453,7 +1540,13 @@ function renderVisibleBusStops() {
 // worker.js — annars visas ett tydligt felmeddelande istället).
 // ============================================================
 const resRobotStopIdCache = new Map(); // hållplatsnamn -> ResRobot-ID, så vi bara söker EN gång per hållplats
-const BUS_ICON_SVG_SMALL = `<svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="4" width="18" height="12" rx="3" fill="currentColor"/><rect x="5.5" y="6.3" width="5.5" height="4" rx="0.6" fill="#12181f"/><rect x="13" y="6.3" width="5.5" height="4" rx="0.6" fill="#12181f"/><rect x="4.5" y="15" width="15" height="2" fill="currentColor"/><circle cx="7.5" cy="18.3" r="1.7" fill="currentColor"/><circle cx="16.5" cy="18.3" r="1.7" fill="currentColor"/></svg>`;
+const departureBoardPanel = document.getElementById("departure-board-panel");
+const departureBoardStopnameEl = document.getElementById("db-panel-stopname");
+const departureBoardRowsEl = document.getElementById("db-panel-rows");
+const departureBoardCloseBtn = document.getElementById("db-panel-close");
+departureBoardCloseBtn.addEventListener("click", () => {
+  departureBoardPanel.classList.remove("visible");
+});
 
 async function findResRobotStopId(stopName) {
   if (resRobotStopIdCache.has(stopName)) return resRobotStopIdCache.get(stopName);
@@ -1466,57 +1559,55 @@ async function findResRobotStopId(stopName) {
   return match.extId;
 }
 
-function renderDepartureBoardHtml(stopName, departures) {
-  const rows = departures.slice(0, 10).map((d, i) => {
-    const line = (d.name || "").replace(/^(Buss|Buss:)\s*/i, "").trim() || "?";
-    const time = d.rtTime || d.time || "";
+function renderDepartureRowsHtml(departures) {
+  if (!departures.length) return `<div class="db-empty">Inga kommande avgångar hittades</div>`;
+  return departures.slice(0, 12).map((d) => {
+    // Linjenumret plockas ut som SIFFRORNA i namnet, oavsett vad som
+    // står runt omkring (t.ex. "Länstrafik - Buss 166") — annars
+    // klämdes hela den texten in i den lilla badgen och orsakade
+    // överlappning.
+    const numMatch = (d.name || "").match(/\d+/);
+    const line = numMatch ? numMatch[0] : (d.name || "?");
+    const time = (d.rtTime || d.time || "").slice(0, 5);
     const dest = d.direction || "";
     return `
-      <div class="db-row ${i % 2 === 0 ? "db-row-a" : "db-row-b"}">
+      <div class="db-row" onclick="window.showLineForDepartureRow('${line.replace(/'/g, "\\'")}')">
         <span class="db-line">${line}</span>
         <span class="db-dest">${dest}</span>
-        <span class="db-time">${time.slice(0, 5)}</span>
+        <span class="db-time">${time}</span>
       </div>
     `;
   }).join("");
-  return `
-    <div class="departure-board">
-      <div class="db-header">
-        <span class="db-header-icon">${BUS_ICON_SVG_SMALL}</span>
-        <div class="db-header-text">
-          <div class="db-header-title">Buss</div>
-          <div class="db-header-sub">Avgångar</div>
-        </div>
-        <div class="db-header-stopname">${stopName}</div>
-      </div>
-      <div class="db-columns">
-        <span>Linje</span><span>Mot</span><span>Avgång</span>
-      </div>
-      ${rows || `<div class="db-empty">Inga kommande avgångar hittades</div>`}
-    </div>
-  `;
 }
 
-async function loadDepartureBoard(stopName, popup) {
+// Hittar en representativ tripInfo (med routeId, färg m.m.) för ett
+// linjenummer från avgångslistan — vi har bara siffran där (ResRobot-
+// data), inte en koppling till vår egen realtidsdata direkt, så vi
+// slår upp den första matchande resan i vår redan laddade tabell.
+window.showLineForDepartureRow = function (lineNumber) {
+  for (const info of tripInfoByTripId.values()) {
+    if (info.line === lineNumber) {
+      showLineForRoute(info);
+      return;
+    }
+  }
+  console.warn(`Hittade ingen ruttdata för linje ${lineNumber}`);
+};
+
+async function openDepartureBoardPanel(stopName) {
+  departureBoardStopnameEl.textContent = stopName;
+  departureBoardRowsEl.innerHTML = `<div class="db-loading">Laddar avgångar…</div>`;
+  departureBoardPanel.classList.add("visible");
   try {
     const stopId = await findResRobotStopId(stopName);
     const res = await fetch(`${PROXY_URL}/resrobot/departures?id=${encodeURIComponent(stopId)}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const departures = data && data.Departure ? data.Departure : [];
-    popup.setContent(renderDepartureBoardHtml(stopName, departures));
+    departureBoardRowsEl.innerHTML = renderDepartureRowsHtml(departures);
   } catch (err) {
     console.warn("Kunde inte hämta avgångar (saknas en riktig ResRobot-nyckel i worker.js?):", err.message);
-    popup.setContent(`
-      <div class="departure-board">
-        <div class="db-header">
-          <span class="db-header-icon">${BUS_ICON_SVG_SMALL}</span>
-          <div class="db-header-text"><div class="db-header-title">Buss</div><div class="db-header-sub">Avgångar</div></div>
-          <div class="db-header-stopname">${stopName}</div>
-        </div>
-        <div class="db-empty">Kunde inte hämta avgångar just nu</div>
-      </div>
-    `);
+    departureBoardRowsEl.innerHTML = `<div class="db-empty">Kunde inte hämta avgångar just nu</div>`;
   }
 }
 
