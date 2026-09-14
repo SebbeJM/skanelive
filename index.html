@@ -1194,11 +1194,34 @@
       height: 100%;
       min-height: 0;
     }
+    /* Reseplanerare (sökformulär): samma bottom-sheet som resultatet */
     #trip-planner-panel {
-      width: 240px;
-      right: 1rem;
+      left: 0;
+      right: 0;
       top: auto;
-      bottom: 4.2rem;
+      bottom: 0;
+      width: 100%;
+      max-width: 100%;
+      border-radius: 12px 12px 0 0;
+      border-left: none;
+      border-right: none;
+      border-bottom: none;
+      padding: 0.7rem 0.75rem;
+      padding-bottom: calc(0.7rem + env(safe-area-inset-bottom, 0px));
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+    /* Förslagslistan uppåt så den inte hamnar under skärmkanten */
+    #trip-planner-panel .tp-suggestions {
+      top: auto;
+      bottom: 100%;
+      margin-top: 0;
+      margin-bottom: 2px;
+    }
+    /* Dölj den flytande "Sök resa"-knappen medan formuläret är öppet */
+    #app.planner-open #trip-planner-btn {
+      display: none;
     }
     .subtitle {
       display: none;
@@ -1676,13 +1699,18 @@ function setupStopAutocomplete(inputEl, dropdownEl, onSelect) {
 setupStopAutocomplete(tpFromInput, document.getElementById("tp-from-suggestions"), (id) => { tpFromStopId = id; });
 setupStopAutocomplete(tpToInput, document.getElementById("tp-to-suggestions"), (id) => { tpToStopId = id; });
 
-tripPlannerBtn.addEventListener("click", () => {
-  tripPlannerPanel.classList.toggle("visible");
-});
-tpPanelClose.addEventListener("click", () => tripPlannerPanel.classList.remove("visible"));
 const tiExpandBtn = document.getElementById("ti-expand-btn");
 const appEl = document.getElementById("app");
 let lastTripAllPoints = null;
+
+function setPlannerOpen(open) {
+  tripPlannerPanel.classList.toggle("visible", open);
+  appEl.classList.toggle("planner-open", open);
+}
+tripPlannerBtn.addEventListener("click", () => {
+  setPlannerOpen(!tripPlannerPanel.classList.contains("visible"));
+});
+tpPanelClose.addEventListener("click", () => setPlannerOpen(false));
 
 // Efter layoutändring (header döljs/visas) måste Leaflet räkna om
 // storlek — annars blir kartan grå på mobil. Körs i flera steg så
@@ -1713,6 +1741,7 @@ function closeTripItinerary() {
   if (tripDurationPopup) { map.removeLayer(tripDurationPopup); tripDurationPopup = null; }
   for (const popup of stopPopups) map.removeLayer(popup);
   stopPopups = [];
+  clearTripVehicleFilter();
   refreshMapLayout();
 }
 
@@ -2072,6 +2101,9 @@ async function showTripAtIndex(index) {
   renderItinerarySteps(legs);
   const allPoints = await drawTripLegsOnMap(legs);
   lastTripAllPoints = allPoints;
+  // Visa bara fordon som tillhör resans linjer (övriga döljs tills
+  // resultattavlan stängs). Billig Set-lookup — ingen extra pollning.
+  applyTripVehicleFilter(legs);
   // Ny ruta för varje flik man växlar till, med den resans egen
   // restid — ersätter en eventuell tidigare visad ruta.
   showTripDurationPopup(trip, allPoints);
@@ -2122,7 +2154,7 @@ tpSearchBtn.addEventListener("click", async () => {
     tripItineraryPanel.classList.remove("expanded");
     tripItineraryPanel.classList.add("visible");
     appEl.classList.add("trip-active");
-    tripPlannerPanel.classList.remove("visible");
+    setPlannerOpen(false);
     tpStatus.textContent = "";
     refreshMapLayout(lastTripAllPoints);
   } catch (err) {
@@ -3360,12 +3392,85 @@ function isWithinRenderBounds(bounds, lat, lon) {
   return bounds.contains([lat, lon]);
 }
 
+// När en resa visas: bara fordon på resans linjenummer syns.
+// null = visa alla (normalläge).
+let tripLineFilter = null;
+let tripFilterAllowsOresundstag = false;
+
+function linesFromTripLegs(legs) {
+  const lines = new Set();
+  let allowsOresundstag = false;
+  for (const leg of legs) {
+    if (!leg || leg.type === "WALK") continue;
+    const product = leg.Product && leg.Product[0];
+    const candidates = [
+      product && product.displayNumber,
+      product && product.line,
+      product && product.num,
+      leg.name,
+      product && product.name,
+    ];
+    for (const c of candidates) {
+      if (!c) continue;
+      const s = String(c).trim();
+      const nums = s.match(/\d+/g);
+      if (nums) for (const n of nums) lines.add(n);
+      if (/^\d+[A-Za-z]?$/.test(s)) lines.add(s);
+    }
+    const nameLower = (
+      (leg.name || "") + " " + ((product && product.name) || "")
+    ).toLowerCase();
+    if (nameLower.includes("öresundståg") || nameLower.includes("oresund")) {
+      allowsOresundstag = true;
+      lines.add("Ö");
+    }
+  }
+  return { lines, allowsOresundstag };
+}
+
+function vehicleMatchesTripFilter(tripInfo) {
+  if (!tripLineFilter) return true;
+  if (!tripInfo) return false;
+  if (tripInfo.line != null && tripLineFilter.has(String(tripInfo.line))) return true;
+  if (tripFilterAllowsOresundstag && tripInfo.brand === "oresundstag") return true;
+  return false;
+}
+
+function applyTripVehicleFilter(legs) {
+  const { lines, allowsOresundstag } = linesFromTripLegs(legs);
+  tripLineFilter = lines;
+  tripFilterAllowsOresundstag = allowsOresundstag;
+  // Ta bort befintliga markörer som inte matchar — O(antal synliga markörer).
+  for (const [id, entry] of [...markers.entries()]) {
+    if (vehicleMatchesTripFilter(entry.tripInfo)) continue;
+    map.removeLayer(entry.marker);
+    map.closePopup(entry.popup);
+    markers.delete(id);
+  }
+  // Simulerade Öresundståg / färjor: dölj lagren när de inte hör till resan.
+  if (allowsOresundstag) {
+    if (!map.hasLayer(simulatedOresundstagLayer)) simulatedOresundstagLayer.addTo(map);
+  } else if (map.hasLayer(simulatedOresundstagLayer)) {
+    map.removeLayer(simulatedOresundstagLayer);
+  }
+  if (map.hasLayer(ferryLayer)) map.removeLayer(ferryLayer);
+}
+
+function clearTripVehicleFilter() {
+  tripLineFilter = null;
+  tripFilterAllowsOresundstag = false;
+  if (!map.hasLayer(simulatedOresundstagLayer)) simulatedOresundstagLayer.addTo(map);
+  if (!map.hasLayer(ferryLayer)) ferryLayer.addTo(map);
+  if (lastEntities) updateVehicles(lastEntities);
+}
+
 function updateVehicles(entities) {
   // Räkna ut kartans synliga gränser EN gång per genomgång, inte en
   // gång per fordon — sparar en hel del arbete när det finns hundratals
   // fordon i datan.
   const renderBounds = map.getBounds().pad(RENDER_BOUNDS_PADDING);
   const seenIds = new Set();
+  const filtering = tripLineFilter != null;
   for (const entity of entities) {
     const vp = entity.vehicle;
     if (!vp || !vp.position) continue;
@@ -3395,6 +3500,16 @@ function updateVehicles(entities) {
     }
     const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
     const tripInfo = tripInfoByTripId.get(tripId);
+    // Resefilter: hoppa över fordon som inte tillhör den valda resans linjer.
+    if (filtering && !vehicleMatchesTripFilter(tripInfo)) {
+      if (markers.has(id)) {
+        const entry = markers.get(id);
+        map.removeLayer(entry.marker);
+        map.closePopup(entry.popup);
+        markers.delete(id);
+      }
+      continue;
+    }
     const displayName = (tripInfo && tripInfo.line) || tripId || "okänd";
     const isMoving = vp.position.speed != null && vp.position.speed > 0.5;
     if (staticDataLoaded && displayName === "okänd") {
