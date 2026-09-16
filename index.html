@@ -308,32 +308,43 @@
      kart-popup), stylad som en riktig elektronisk pendlartavla. */
   /* Donera-popup — dyker upp efter 10 sekunder, en gång per
      webbläsare (sparas i localStorage). */
+  #donate-popup-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1290;
+    background: rgba(0,0,0,0.55);
+  }
+  #donate-popup-backdrop.visible {
+    display: block;
+  }
   #donate-popup {
     display: none;
     position: fixed;
-    bottom: 1.25rem;
-    right: 1.25rem;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     z-index: 1300;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 10px;
     box-shadow: 0 8px 26px rgba(0,0,0,0.45);
-    padding: 1rem 1.2rem;
-    max-width: 240px;
+    padding: 1.3rem 1.4rem;
+    max-width: 320px;
     text-align: center;
-    animation: donate-popup-in 0.35s ease-out;
+    animation: donate-popup-in 0.25s ease-out;
   }
   #donate-popup.visible {
     display: block;
   }
   @keyframes donate-popup-in {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   }
   #donate-popup-close {
     position: absolute;
-    top: 0.3rem;
-    right: 0.5rem;
+    top: 0.4rem;
+    right: 0.6rem;
     background: none;
     border: none;
     color: var(--muted);
@@ -343,14 +354,15 @@
     padding: 0.2rem;
   }
   #donate-popup p {
-    margin: 0 0 0.8rem;
+    margin: 0.3rem 0 1rem;
     color: var(--fg);
-    font-weight: 600;
+    font-weight: 500;
     font-size: 0.9rem;
+    line-height: 1.5;
   }
   #donate-popup a {
     display: inline-block;
-    background: #e2231a;
+    background: #2563eb;
     color: #ffffff;
     font-weight: 600;
     padding: 0.45rem 1.3rem;
@@ -783,10 +795,8 @@
   }
   @media (max-width: 700px) {
     #donate-popup {
-      bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-      right: 0.75rem;
-      max-width: 200px;
-      padding: 0.8rem 1rem;
+      max-width: 85vw;
+      padding: 1.1rem 1.2rem;
     }
     .subtitle {
       display: none;
@@ -965,9 +975,10 @@
         <button id="line-hud-close">Dölj linje</button>
       </div>
     </div>
+    <div id="donate-popup-backdrop"></div>
     <div id="donate-popup">
       <button id="donate-popup-close" aria-label="Stäng">&times;</button>
-      <p>Vill du stötta projektet?</p>
+      <p>Skåne Live byggs och underhålls av mig ensam.<br><br>Om du tycker att sidan är användbar får du gärna donera — det hjälper till med drift och fortsatt utveckling.</p>
       <a href="contact.html#donate">Donera</a>
     </div>
     <div id="departure-board-panel">
@@ -2756,17 +2767,25 @@ if (window.matchMedia("(max-width: 700px)").matches) {
 const DONATE_POPUP_STORAGE_KEY = "skanelive_donate_popup_seen";
 const donatePopup = document.getElementById("donate-popup");
 const donatePopupClose = document.getElementById("donate-popup-close");
+const donatePopupBackdrop = document.getElementById("donate-popup-backdrop");
+function closeDonatePopup() {
+  donatePopup.classList.remove("visible");
+  donatePopupBackdrop.classList.remove("visible");
+  localStorage.setItem(DONATE_POPUP_STORAGE_KEY, "1");
+}
 if (!localStorage.getItem(DONATE_POPUP_STORAGE_KEY)) {
   setTimeout(() => {
     // Kolla igen precis innan den visas — ifall en annan flik hunnit
     // stänga den och sätta markeringen under tiden.
     if (!localStorage.getItem(DONATE_POPUP_STORAGE_KEY)) {
       donatePopup.classList.add("visible");
+      donatePopupBackdrop.classList.add("visible");
     }
   }, 10000);
 }
-donatePopupClose.addEventListener("click", () => {
-  donatePopup.classList.remove("visible");
+donatePopupClose.addEventListener("click", closeDonatePopup);
+donatePopupBackdrop.addEventListener("click", closeDonatePopup);
+donatePopup.querySelector("a").addEventListener("click", () => {
   localStorage.setItem(DONATE_POPUP_STORAGE_KEY, "1");
 });
 
