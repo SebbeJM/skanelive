@@ -4,35 +4,41 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kontakt – Skåne Live</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <style>
   :root {
     --bg: #0e0e0e;
-    --panel: #0d0d0d;
+    --panel: #10161c;
     --fg: #e7ece8;
     --muted: #7d9088;
     --line: #262626;
-    --accent: #ff8552;
-    --accent-dim: #c9612f;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
-    height: 100%;
+    min-height: 100%;
     background: var(--bg);
     color: var(--fg);
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    overflow: hidden;
   }
   body {
     position: relative;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
     padding: 1.5rem;
+    gap: 1.5rem;
+    min-height: 100vh;
   }
 
+  /* ============================================================
+     Bakgrund — en RIKTIG karta (samma OpenFreeMap-stil och mörka
+     tema som huvudsidan), inzoomad på Malmö. Helt icke-interaktiv
+     (går inte att panorera/zooma/klicka), och fordonen är simulerade
+     — ingen GPS eller API-anrop laddas, bara för syns skull.
+     ============================================================ */
   #bg-map {
     position: absolute;
     inset: 0;
@@ -40,13 +46,7 @@
     pointer-events: none;
   }
 
-  .place-labels-layer {
-    filter: brightness(1.6);
-  }
-  .base-map-layer {
-    filter: brightness(1.12);
-  }
-
+  /* Samma fordonsikon-utseende som på huvudsidan, pixel för pixel. */
   .vehicle-marker {
     transition: transform 6.5s linear;
     will-change: transform;
@@ -55,19 +55,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: var(--panel);
     box-shadow: 0 1px 4px rgba(0,0,0,0.6);
     color: var(--fg);
-    font-size: 9px;
+    font-size: 10px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
   }
-  .vehicle-icon.unknown { background: var(--accent-dim); }
   .vehicle-icon .label {
     text-shadow:
       -1px -1px 0 #000,
@@ -76,40 +73,29 @@
        1px  1px 0 #000;
   }
 
-  #bg-overlay {
+  /* Mörk vinjett ovanpå kartan så kontaktrutan alltid är lätt att läsa. */
+  #bg-vignette {
     position: absolute;
     inset: 0;
     z-index: 1;
     pointer-events: none;
-    background:
-      radial-gradient(ellipse at center,
-        rgba(14, 14, 14, 0.50) 0%,
-        rgba(14, 14, 14, 0.72) 55%,
-        rgba(14, 14, 14, 0.88) 100%);
+    background: radial-gradient(circle at center, rgba(14,14,14,0.2) 0%, rgba(14,14,14,0.55) 62%, rgba(14,14,14,0.75) 100%);
   }
 
   .contact-box {
     position: relative;
     z-index: 2;
-    background: rgba(13, 13, 13, 0.62);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 2rem 2.4rem;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    max-width: 90vw;
   }
   .contact-box p {
-    margin: 0 0 0.7rem;
+    margin: 0 0 0.5rem;
     line-height: 1.6;
     color: var(--muted);
-    font-size: 0.95rem;
   }
   .email-row {
     display: inline-flex;
     align-items: center;
-    gap: 0.7rem;
-    font-size: 1.15rem;
+    gap: 0.6rem;
+    font-size: 1.1rem;
     font-weight: 600;
     color: var(--fg);
   }
@@ -117,20 +103,19 @@
     background: none;
     border: 1px solid var(--line);
     border-radius: 5px;
-    padding: 0.4rem;
+    padding: 0.35rem;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     color: var(--fg);
-    transition: border-color 0.15s ease;
   }
   #copy-btn:hover {
     border-color: var(--muted);
   }
   #copy-feedback {
     display: block;
-    margin-top: 0.8rem;
+    margin-top: 0.7rem;
     font-size: 0.8rem;
     color: var(--muted);
     height: 1.2em;
@@ -142,20 +127,53 @@
   }
   .back-link {
     display: inline-block;
-    margin-top: 1.8rem;
+    margin-top: 2rem;
     color: var(--muted);
     text-decoration: none;
     font-size: 0.85rem;
-    transition: color 0.15s ease;
   }
   .back-link:hover {
     color: var(--fg);
+  }
+  .donate-box {
+    scroll-margin-top: 2rem;
+    max-width: 360px;
+  }
+  .donate-message {
+    color: var(--fg);
+    line-height: 1.6;
+    margin: 0 0 1.2rem;
+  }
+  .donate-qr {
+    display: block;
+    width: 200px;
+    max-width: 70vw;
+    margin: 0 auto 1rem;
+    border-radius: 8px;
+  }
+  .donate-link {
+    display: inline-block;
+    background: #e2231a;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 0.6rem 1.4rem;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 0.95rem;
+  }
+  .donate-link:hover {
+    opacity: 0.9;
+  }
+  .donate-note {
+    margin: 1rem 0 0;
+    color: var(--muted);
+    font-size: 0.78rem;
   }
 </style>
 </head>
 <body>
   <div id="bg-map" aria-hidden="true"></div>
-  <div id="bg-overlay" aria-hidden="true"></div>
+  <div id="bg-vignette" aria-hidden="true"></div>
 
   <div class="contact-box">
     <p>För kontakt använd min mejl</p>
@@ -173,8 +191,22 @@
     <a class="back-link" href="index.html">← Tillbaka till kartan</a>
   </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/protobufjs@7.2.6/dist/protobuf.min.js"></script>
+  <div class="contact-box donate-box" id="donate">
+    <p class="donate-message">
+      Detta projekt drivs helt av mig och jag har för tillfället inga intäkter i samband med det.
+      <br><br>
+      Om du vill stötta projektet så får du gärna donera en frivillig summa med länken här nedanför
+      <br><br>
+      Tack!
+      <br><br>
+      /Sebastian.
+    </p>
+    <img src="images/revolut-qr.png" alt="QR-kod för att donera via Revolut" class="donate-qr">
+    <a class="donate-link" href="https://revolut.me/smauritsson" target="_blank" rel="noopener">Donera via Revolut</a>
+    <p class="donate-note">För större donationer, använd banköverförings-metoden.</p>
+  </div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
   // ============================================================
   // Kopiera-knapp
@@ -199,210 +231,338 @@
   });
 
   // ============================================================
-  // Konfiguration (samma som huvudsidan)
+  // Bakgrundskarta — Malmö centrum, samma stil/tema som huvudsidan
   // ============================================================
-  const PROXY_URL = "https://skanetrafikenlivekarta.sebastianmauritsson.workers.dev";
-  const TRIP_LOOKUP_URL = "data/trip_lookup.json";
-  const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
-  const POLL_INTERVAL_MS = 7000;
-
-  // ============================================================
-  // Minimal GTFS-Realtime protobuf-schema
-  // ============================================================
-  const GTFS_RT_PROTO = `
-syntax = "proto2";
-package transit_realtime;
-
-message FeedMessage {
-  required FeedHeader header = 1;
-  repeated FeedEntity entity = 2;
-}
-message FeedHeader {
-  required string gtfs_realtime_version = 1;
-  optional uint64 timestamp = 3;
-}
-message FeedEntity {
-  required string id = 1;
-  optional VehiclePosition vehicle = 4;
-}
-message VehiclePosition {
-  optional TripDescriptor trip = 1;
-  optional VehicleDescriptor vehicle = 8;
-  optional Position position = 2;
-  optional uint64 timestamp = 5;
-}
-message TripDescriptor {
-  optional string trip_id = 1;
-  optional string route_id = 5;
-}
-message VehicleDescriptor {
-  optional string id = 1;
-  optional string label = 2;
-}
-message Position {
-  required float latitude = 1;
-  required float longitude = 2;
-  optional float bearing = 3;
-  optional float speed = 5;
-}
-`;
-
-  // ============================================================
-  // Karta – samma Carto Dark Matter som live-kartan
-  // ============================================================
-  const map = L.map("bg-map", {
-    center: [55.5935, 13.0130],
-    zoom: 15.2,
-    zoomControl: false,
+  const map = new maplibregl.Map({
+    container: "bg-map",
+    style: "https://tiles.openfreemap.org/styles/liberty",
+    center: [13.0130, 55.5935], // Möllevången-området — tätt gatunät, inga tågspår i närheten
+    zoom: 16.5,
     attributionControl: false,
-    dragging: false,
-    scrollWheelZoom: false,
-    doubleClickZoom: false,
-    boxZoom: false,
-    keyboard: false,
-    touchZoom: false,
+    interactive: false, // helt icke-interaktiv — bara dekoration
   });
 
-  L.tileLayer(
-    `https://{s}.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-    { maxZoom: 20, className: "base-map-layer" }
-  ).addTo(map);
+  // ---- Samma mörkläggningslogik som huvudsidans applyDarkTheme() ----
+  const LAYERS_TO_REMOVE = [
+    "building-3d",
+    "aeroway_fill", "aeroway_runway", "aeroway_taxiway",
+    "boundary_3", "boundary_2", "boundary_disputed",
+    "waterway_line_label", "water_name_point_label", "water_name_line_label",
+    "poi_r20", "poi_r7", "poi_r1",
+    "highway-name-path", "highway-name-minor", "highway-name-major",
+    "highway-shield-non-us", "highway-shield-us-interstate", "road_shield_us",
+    "road_one_way_arrow", "road_one_way_arrow_opposite",
+    "label_other", "label_village", "label_state",
+    "label_country_3", "label_country_2", "label_country_1",
+    "poi_transit", "airport", // ingen anledning att visa hållplatser här
+  ];
 
-  L.tileLayer(
-    `https://{s}.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
-    { maxZoom: 20, className: "place-labels-layer" }
-  ).addTo(map);
-
-  // ============================================================
-  // Fordonsmarkörer (live)
-  // ============================================================
-  const markers = new Map();
-  const tripInfoByTripId = new Map();
-  let staticDataLoaded = false;
-  let FeedMessageType = null;
-  let lastEntities = null;
-
-  function iconHtml(tripInfo) {
-    const hasColor = tripInfo && tripInfo.color;
-    const bg = hasColor ? `#${tripInfo.color}` : null;
-    const fg = tripInfo && tripInfo.textColor ? `#${tripInfo.textColor}` : "#eef1ec";
-    const label = tripInfo && tripInfo.line ? tripInfo.line : "";
-    const style = bg ? `background:${bg};color:${fg};` : "";
-    const cls = hasColor ? "" : "unknown";
-    const labelHtml = label ? `<span class="label">${label}</span>` : "";
-    return `<div class="vehicle-icon ${cls}" style="${style}">${labelHtml}</div>`;
+  function removeUnneededLayers() {
+    for (const id of LAYERS_TO_REMOVE) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
   }
 
-  function makeDivIcon(tripInfo) {
-    return L.divIcon({
-      className: "vehicle-marker",
-      html: iconHtml(tripInfo),
-      iconSize: [20, 20],
-      iconAnchor: [10, 10],
+  function applyDarkTheme() {
+    const style = map.getStyle();
+    for (const layer of style.layers) {
+      const id = layer.id;
+      const type = layer.type;
+      try {
+        if (type === "background") {
+          map.setPaintProperty(id, "background-color", "#0e0e0e");
+        } else if (type === "raster") {
+          map.setPaintProperty(id, "raster-opacity", 0);
+        } else if (id === "building") {
+          map.setPaintProperty(id, "fill-color", "#000000");
+          map.setPaintProperty(id, "fill-outline-color", "#000000");
+          map.setLayerZoomRange(id, 13, 24);
+        } else if (id === "building-3d") {
+          // borttaget nedan
+        } else if (type === "fill") {
+          let fillColor;
+          if (id.includes("water")) {
+            fillColor = "#2c353c";
+          } else {
+            fillColor = "#0e0e0e";
+          }
+          map.setPaintProperty(id, "fill-color", fillColor);
+          if (layer.paint && layer.paint["fill-outline-color"] !== undefined) {
+            map.setPaintProperty(id, "fill-outline-color", fillColor);
+          }
+        } else if (type === "line") {
+          if (id.includes("waterway")) {
+            map.setPaintProperty(id, "line-color", "#3f5a6d");
+          } else if (id.includes("boundary")) {
+            map.setPaintProperty(id, "line-color", "#676772");
+          } else {
+            map.setPaintProperty(id, "line-color", "#1c1f26");
+          }
+        } else if (type === "symbol") {
+          if (layer.paint && layer.paint["text-color"] !== undefined) {
+            map.setPaintProperty(id, "text-color", "#c9c9c9");
+          }
+          if (layer.paint && layer.paint["text-halo-color"] !== undefined) {
+            map.setPaintProperty(id, "text-halo-color", "#0e0e0e");
+          }
+        }
+      } catch (err) {
+        // Vissa lager saknar egenskapen — hoppa bara över.
+      }
+    }
+  }
+
+  // ---- Samma lila Skåne-järnvägshöjdning som huvudsidan (harmless bonus om
+  // det finns spår i vy, annars gör den helt enkelt ingenting) ----
+  const SKANE_BOUNDS_POLYGON = {
+    type: "Polygon",
+    coordinates: [[
+      [12.65, 55.25], [14.65, 55.25], [14.65, 56.55], [12.65, 56.55], [12.65, 55.25],
+    ]],
+  };
+  function highlightSkaneRailLines() {
+    const style = map.getStyle();
+    for (const layer of style.layers) {
+      if (layer.type !== "line" || !layer.id.includes("rail")) continue;
+      if (layer.id.endsWith("-skane")) continue;
+      const highlightId = `${layer.id}-skane`;
+      if (map.getLayer(highlightId)) continue;
+      const geoFilter = ["within", SKANE_BOUNDS_POLYGON];
+      const combinedFilter = layer.filter ? ["all", layer.filter, geoFilter] : geoFilter;
+      try {
+        map.addLayer({
+          id: highlightId,
+          type: "line",
+          source: layer.source,
+          ...(layer["source-layer"] ? { "source-layer": layer["source-layer"] } : {}),
+          layout: layer.layout || {},
+          filter: combinedFilter,
+          paint: {
+            "line-color": "#8a7fd6",
+            "line-width": layer.id.includes("hatching") ? 5 : 3.5,
+          },
+        });
+      } catch (err) {
+        // Ofarligt om det misslyckas — rent kosmetiskt.
+      }
+    }
+  }
+
+  // ============================================================
+  // Simulerade fordon — rör sig längs RIKTIGA gator, hämtade direkt
+  // från kartans egna (redan laddade) väggeometri, i stället för
+  // gissade koordinater. Inget extra API-anrop, ingen GPS — bara
+  // kartans egen vektordata återanvänd.
+  // ============================================================
+  const FAKE_VEHICLE_STYLE = [
+    { color: "2e7d32", label: "5" },
+    { color: "f9a825", label: "171" },
+    { color: "2e7d32", label: "8" },
+    { color: "2e7d32", label: "3" },
+    { color: "f9a825", label: "146" },
+    { color: "2e7d32", label: "1" },
+    { color: "f9a825", label: "159" },
+    { color: "2e7d32", label: "9" },
+    { color: "2e7d32", label: "11" },
+    { color: "f9a825", label: "133" },
+  ];
+
+  function makeFakeIcon(color, label) {
+    return `<div class="vehicle-icon" style="background:#${color};"><span class="label">${label}</span></div>`;
+  }
+
+  // Plockar ut några riktiga gatusträckor (LineString-geometrier) från de
+  // väglager kartan redan ritat upp i den synliga vyn.
+  function findRealRoadRoutes(count) {
+    const features = map.queryRenderedFeatures();
+    const seen = new Set();
+    const candidates = [];
+    const layerIdsLogged = new Set();
+
+    function isValidCoord(c) {
+      return Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1]);
+    }
+
+    for (const f of features) {
+      const layerId = f.layer && f.layer.id ? f.layer.id : "";
+      layerIdsLogged.add(`${layerId} (${f.geometry.type})`);
+      if (f.geometry.type !== "LineString") continue;
+      if (
+        layerId.includes("rail") ||
+        layerId.includes("water") ||
+        layerId.includes("boundary") ||
+        layerId.includes("building") ||
+        layerId.includes("label") ||
+        layerId.includes("shield") ||
+        layerId.includes("arrow") ||
+        layerId.includes("aeroway")
+      ) continue;
+      const coords = f.geometry.coordinates;
+      // Kräv att ALLA punkter i sträckan faktiskt är giltiga [lng, lat]-par
+      // — trasiga/ofullständiga koordinater var trolig orsak till kraschen.
+      if (!Array.isArray(coords) || coords.length < 2 || !coords.every(isValidCoord)) continue;
+      const key = coords[0].join(",") + coords[coords.length - 1].join(",");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(coords);
+    }
+    console.log("Alla lager som hittades i vyn:", [...layerIdsLogged]);
+    // Blanda och plocka ut det antal vi behöver.
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+    return candidates.slice(0, count);
+  }
+
+  function startFakeVehicles() {
+    const pool = findRealRoadRoutes(40); // en större pool att välja nya gator ifrån
+    console.log(`Hittade ${pool.length} riktiga gatusträckor att simulera fordon på.`);
+    if (pool.length === 0) {
+      console.warn("Hittade inga riktiga gator att simulera fordon på ännu.");
+      return;
+    }
+
+    function randomRoute() {
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    // Extra skyddsnät: anropa aldrig setLngLat med ett ogiltigt värde,
+    // även om det inte borde kunna hända efter valideringen ovan.
+    function safeSetLngLat(marker, coord) {
+      if (Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1])) {
+        marker.setLngLat(coord);
+      }
+    }
+
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (d) => (d * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // Ungefär stadsbuss-fart. Alla fordon kör i samma takt hela tiden,
+    // oavsett hur lång/kort varje delsträcka mellan två punkter är —
+    // glidningstiden räknas ut från det VERKLIGA avståndet varje gång.
+    const SPEED_MPS = 8;
+    const EDGE_MARGIN_PX = 50;
+
+    function isNearScreenEdge(coord) {
+      const p = map.project(coord);
+      const w = map.getContainer().clientWidth;
+      const h = map.getContainer().clientHeight;
+      return p.x < EDGE_MARGIN_PX || p.x > w - EDGE_MARGIN_PX || p.y < EDGE_MARGIN_PX || p.y > h - EDGE_MARGIN_PX;
+    }
+
+    // ---- Väg-graf: vet vilka gator som FAKTISKT möts vid samma korsning,
+    // så ett fordon bara kan fortsätta på en riktigt ansluten gata i stället
+    // för att hoppa till en slumpad, orelaterad gata mitt i vyn. ----
+    function coordKey(c) {
+      return `${c[0].toFixed(6)},${c[1].toFixed(6)}`;
+    }
+    const graph = new Map(); // korsningsnyckel -> [{ points (i rätt riktning) }]
+    for (const route of pool) {
+      const startKey = coordKey(route[0]);
+      const endKey = coordKey(route[route.length - 1]);
+      if (!graph.has(startKey)) graph.set(startKey, []);
+      graph.get(startKey).push(route); // redan i rätt riktning framåt
+      if (!graph.has(endKey)) graph.set(endKey, []);
+      graph.get(endKey).push(route.slice().reverse()); // ansluter vid slutet — kör den baklänges
+    }
+
+    // Hittar en RIKTIGT ansluten gata vid en given punkt (om någon finns),
+    // annan än den exakt motsatta riktningen av den vi precis kom ifrån
+    // (annars skulle fordonet bara vända rakt tillbaka samma väg).
+    function findConnection(coord, excludeRoute) {
+      const excludeStartKey = coordKey(excludeRoute[0]);
+      const excludeEndKey = coordKey(excludeRoute[excludeRoute.length - 1]);
+      const options = (graph.get(coordKey(coord)) || []).filter((r) => {
+        const rStartKey = coordKey(r[0]);
+        const rEndKey = coordKey(r[r.length - 1]);
+        return !(rStartKey === excludeEndKey && rEndKey === excludeStartKey);
+      });
+      if (options.length === 0) return null;
+      return options[Math.floor(Math.random() * options.length)];
+    }
+
+    FAKE_VEHICLE_STYLE.forEach((style) => {
+      const el = document.createElement("div");
+      el.className = "vehicle-marker";
+      el.innerHTML = makeFakeIcon(style.color, style.label);
+      el.style.transitionProperty = "transform";
+
+      let route = randomRoute();
+      let step = Math.floor(Math.random() * (route.length - 1));
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat(route[step])
+        .addTo(map);
+
+      function fadeToNewRoute() {
+        el.style.transitionProperty = "opacity";
+        el.style.transitionDuration = "0.4s";
+        el.style.opacity = "0";
+        setTimeout(() => {
+          route = randomRoute();
+          step = 0;
+          el.style.transitionProperty = "transform";
+          el.style.transitionDuration = "0s";
+          safeSetLngLat(marker, route[step]);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              el.style.transitionProperty = "transform, opacity";
+              el.style.opacity = "1";
+              scheduleNextStep();
+            });
+          });
+        }, 400);
+      }
+
+      function scheduleNextStep() {
+        const from = route[step];
+        const to = route[step + 1];
+        if (!to) {
+          // Vägens slut nådd. Fortsätt FÖRST på en riktigt ansluten gata
+          // om någon finns (riktig korsning) — bara om ingen sådan finns
+          // (en äkta återvändsgränd i vår data, vilket i praktiken oftast
+          // sammanfaller med kanten av det hämtade området) tonar vi ut.
+          const connected = findConnection(from, route);
+          if (connected) {
+            route = connected;
+            step = 0;
+            scheduleNextStep();
+          } else {
+            fadeToNewRoute();
+          }
+          return;
+        }
+        const distance = haversineMeters(from[1], from[0], to[1], to[0]);
+        const durationS = Math.max(0.15, distance / SPEED_MPS);
+        el.style.transitionProperty = "transform";
+        el.style.transitionDuration = `${durationS}s`;
+        safeSetLngLat(marker, to);
+        step++;
+        timer = setTimeout(scheduleNextStep, durationS * 1000);
+      }
+
+      scheduleNextStep();
     });
   }
 
-  function iconKeyFor(tripInfo) {
-    return (tripInfo && tripInfo.color) || "unknown";
-  }
-
-  function updateVehicles(entities) {
-    const seenIds = new Set();
-
-    for (const entity of entities) {
-      const vp = entity.vehicle;
-      if (!vp || !vp.position) continue;
-
-      const id = (vp.vehicle && (vp.vehicle.id || vp.vehicle.label)) || entity.id;
-      const lat = vp.position.latitude;
-      const lon = vp.position.longitude;
-      const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
-      const tripInfo = tripInfoByTripId.get(tripId);
-      const displayName = (tripInfo && tripInfo.line) || tripId || "okänd";
-
-      // Filtrera bort okända först när lookup är klar
-      if (staticDataLoaded && displayName === "okänd") continue;
-
-      seenIds.add(id);
-      const newIconKey = iconKeyFor(tripInfo);
-
-      if (markers.has(id)) {
-        const entry = markers.get(id);
-        // Uppdatera position
-        entry.marker.setLatLng([lat, lon]);
-        // Uppdatera ikon om färgen nu är känd (t.ex. efter att trip_lookup laddats)
-        if (entry.iconKey !== newIconKey) {
-          entry.marker.setIcon(makeDivIcon(tripInfo));
-          entry.iconKey = newIconKey;
-          entry.tripInfo = tripInfo;
-        }
-      } else {
-        const marker = L.marker([lat, lon], {
-          icon: makeDivIcon(tripInfo),
-          interactive: false,
-        }).addTo(map);
-        markers.set(id, { marker, tripInfo, iconKey: newIconKey });
-      }
-    }
-
-    // Ta bort fordon som försvunnit
-    for (const [id, entry] of markers.entries()) {
-      if (!seenIds.has(id)) {
-        map.removeLayer(entry.marker);
-        markers.delete(id);
-      }
-    }
-  }
-
-  async function loadProtoSchema() {
-    const root = protobuf.parse(GTFS_RT_PROTO).root;
-    FeedMessageType = root.lookupType("transit_realtime.FeedMessage");
-  }
-
-  async function loadTripLookup() {
-    try {
-      const res = await fetch(TRIP_LOOKUP_URL, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      for (const [tripId, info] of Object.entries(data.trips)) {
-        tripInfoByTripId.set(tripId, info);
-      }
-      staticDataLoaded = true;
-      console.log(`Laddade ${tripInfoByTripId.size} resor för bakgrundskartan`);
-
-      // Rita om med rätt färger direkt när lookup är klar
-      if (lastEntities) updateVehicles(lastEntities);
-    } catch (err) {
-      console.warn("Kunde inte ladda trip_lookup:", err);
-    }
-  }
-
-  async function fetchVehiclePositions() {
-    const res = await fetch(PROXY_URL, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const buffer = new Uint8Array(await res.arrayBuffer());
-    const message = FeedMessageType.decode(buffer);
-    const obj = FeedMessageType.toObject(message, { defaults: true });
-    return obj.entity || [];
-  }
-
-  async function pollLoop() {
-    try {
-      const entities = await fetchVehiclePositions();
-      lastEntities = entities;
-      updateVehicles(entities);
-    } catch (err) {
-      console.warn("Kunde inte hämta fordon:", err.message);
-    } finally {
-      setTimeout(pollLoop, POLL_INTERVAL_MS);
-    }
-  }
-
-  (async function init() {
-    await loadProtoSchema();
-    loadTripLookup();   // kör parallellt
-    pollLoop();
-  })();
+  // "idle" (inte "load") — vi vill vara säkra på att kakelrutorna med
+  // väggeometrin faktiskt hunnit ritas innan vi frågar efter dem.
+  map.on("load", () => {
+    applyDarkTheme();
+    removeUnneededLayers();
+    highlightSkaneRailLines();
+  });
+  map.once("idle", () => {
+    startFakeVehicles();
+  });
 </script>
 </body>
 </html>
