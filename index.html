@@ -797,9 +797,8 @@
     #legend-inline {
       order: 3;
       width: 100%;
-      overflow-x: auto;
-      flex-wrap: nowrap;
-      -webkit-overflow-scrolling: touch;
+      flex-wrap: wrap;
+      row-gap: 0.3rem;
     }
     #visitor-stats {
       order: 4;
@@ -815,7 +814,7 @@
       flex-shrink: 0;
     }
     header {
-      padding-right: calc(1.25rem + env(safe-area-inset-right, 0px));
+      padding-right: calc(1.5rem + env(safe-area-inset-right, 0px));
       padding-left: calc(1.25rem + env(safe-area-inset-left, 0px));
     }
     .header-right {
@@ -2652,21 +2651,36 @@ async function loadVisitorStats() {
 // Tvingar helskärm på mobilen — webbläsare tillåter bara detta som
 // svar på en riktig användarinteraktion (inte automatiskt vid
 // sidladdning), så det triggas vid första tryck/pekning någonstans på
-// sidan. Fungerar bäst på Android/Chrome; äldre iOS-versioner saknar
-// stöd för Fullscreen API helt (då sker bara inget, utan fel).
+// sidan. Lyssnar i CAPTURE-fasen (innan händelsen når kartan/knapparna)
+// eftersom Leaflets egna kontroller ofta stoppar spridningen
+// (stopPropagation) — annars hade vårt "document"-lyssnare aldrig nåtts
+// om första trycket råkade vara på kartan. Fungerar bäst på
+// Android/Chrome; äldre iOS-versioner saknar stöd för Fullscreen API
+// helt (då sker bara inget, utan fel).
 function requestPageFullscreen() {
   const el = document.documentElement;
   const request = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
-  if (request) request.call(el).catch(() => { /* nekad eller saknas stöd — inget att göra åt */ });
+  if (!request) {
+    console.warn("Helskärm: webbläsaren saknar stöd för Fullscreen API.");
+    return;
+  }
+  try {
+    const result = request.call(el);
+    if (result && typeof result.catch === "function") {
+      result.catch((err) => console.warn("Helskärm nekades eller misslyckades:", err));
+    }
+  } catch (err) {
+    console.warn("Helskärm: fel vid anrop:", err);
+  }
 }
 if (window.matchMedia("(max-width: 700px)").matches) {
   const triggerFullscreenOnce = () => {
     requestPageFullscreen();
-    document.removeEventListener("touchstart", triggerFullscreenOnce);
-    document.removeEventListener("click", triggerFullscreenOnce);
+    document.removeEventListener("touchstart", triggerFullscreenOnce, true);
+    document.removeEventListener("click", triggerFullscreenOnce, true);
   };
-  document.addEventListener("touchstart", triggerFullscreenOnce, { once: true });
-  document.addEventListener("click", triggerFullscreenOnce, { once: true });
+  document.addEventListener("touchstart", triggerFullscreenOnce, { once: true, capture: true });
+  document.addEventListener("click", triggerFullscreenOnce, { once: true, capture: true });
 }
 
 (async function init() {
