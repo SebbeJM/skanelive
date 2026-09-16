@@ -306,6 +306,61 @@
   }
   /* Avgångstavla — fast ruta nere till höger (inte en flytande
      kart-popup), stylad som en riktig elektronisk pendlartavla. */
+  /* Donera-popup — dyker upp efter 10 sekunder, en gång per
+     webbläsare (sparas i localStorage). */
+  #donate-popup {
+    display: none;
+    position: fixed;
+    bottom: 1.25rem;
+    right: 1.25rem;
+    z-index: 1300;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 8px 26px rgba(0,0,0,0.45);
+    padding: 1rem 1.2rem;
+    max-width: 240px;
+    text-align: center;
+    animation: donate-popup-in 0.35s ease-out;
+  }
+  #donate-popup.visible {
+    display: block;
+  }
+  @keyframes donate-popup-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #donate-popup-close {
+    position: absolute;
+    top: 0.3rem;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.2rem;
+  }
+  #donate-popup p {
+    margin: 0 0 0.8rem;
+    color: var(--fg);
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  #donate-popup a {
+    display: inline-block;
+    background: #e2231a;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 0.45rem 1.3rem;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 0.85rem;
+  }
+  #donate-popup a:hover {
+    opacity: 0.9;
+  }
   #departure-board-panel {
     display: none;
     position: absolute;
@@ -727,6 +782,12 @@
     font-weight: 600;
   }
   @media (max-width: 700px) {
+    #donate-popup {
+      bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+      right: 0.75rem;
+      max-width: 200px;
+      padding: 0.8rem 1rem;
+    }
     .subtitle {
       display: none;
     }
@@ -870,6 +931,7 @@
       <button id="mobile-filter-btn">Anpassa</button>
       <a href="https://www.skanetrafiken.se/" target="_blank" rel="noopener">Reseplaneraren</a>
       <a href="contact.html">Kontakt</a>
+      <a href="contact.html#donate">Donera</a>
     </div>
     <div id="filter-panel">
       <label><input type="checkbox" id="show-rail-lines-checkbox" checked> Dölj linjer</label>
@@ -902,6 +964,11 @@
         <div id="line-hud-text"></div>
         <button id="line-hud-close">Dölj linje</button>
       </div>
+    </div>
+    <div id="donate-popup">
+      <button id="donate-popup-close" aria-label="Stäng">&times;</button>
+      <p>Vill du stötta projektet?</p>
+      <a href="contact.html#donate">Donera</a>
     </div>
     <div id="departure-board-panel">
       <div class="db-panel-header">
@@ -2682,6 +2749,26 @@ if (window.matchMedia("(max-width: 700px)").matches) {
   document.addEventListener("touchstart", triggerFullscreenOnce, { once: true, capture: true });
   document.addEventListener("click", triggerFullscreenOnce, { once: true, capture: true });
 }
+
+// Donera-popup — dyker upp 10 sekunder efter sidladdning, bara en
+// gång totalt per webbläsare (sparas i localStorage, inte kopplat
+// till en riktig person/inloggning).
+const DONATE_POPUP_STORAGE_KEY = "skanelive_donate_popup_seen";
+const donatePopup = document.getElementById("donate-popup");
+const donatePopupClose = document.getElementById("donate-popup-close");
+if (!localStorage.getItem(DONATE_POPUP_STORAGE_KEY)) {
+  setTimeout(() => {
+    // Kolla igen precis innan den visas — ifall en annan flik hunnit
+    // stänga den och sätta markeringen under tiden.
+    if (!localStorage.getItem(DONATE_POPUP_STORAGE_KEY)) {
+      donatePopup.classList.add("visible");
+    }
+  }, 10000);
+}
+donatePopupClose.addEventListener("click", () => {
+  donatePopup.classList.remove("visible");
+  localStorage.setItem(DONATE_POPUP_STORAGE_KEY, "1");
+});
 
 (async function init() {
   console.time("⏱ init() start → loadProtoSchema klar");
