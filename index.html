@@ -63,13 +63,6 @@
     grid-template-rows: auto 1fr;
     height: 100%;
   }
-  /* Kartans wrapper: min-height 0 så grid-raden 1fr kan styra höjden
-     korrekt (annars kan inline height:100% ge 0-höjd när headern döljs). */
-  #app > div {
-    min-height: 0;
-    position: relative;
-    height: 100%;
-  }
   header {
     position: relative;
     display: flex;
@@ -502,33 +495,6 @@
   }
   #trip-itinerary-panel.visible {
     display: block;
-  }
-  .ti-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.15rem;
-  }
-  #ti-expand-btn {
-    display: none;
-    background: none;
-    border: none;
-    color: var(--muted);
-    padding: 0.15rem;
-    cursor: pointer;
-    line-height: 1;
-  }
-  #ti-expand-btn:hover {
-    color: var(--fg);
-  }
-  #ti-expand-btn svg {
-    display: block;
-    transition: transform 0.2s;
-  }
-  #trip-itinerary-panel.expanded #ti-expand-btn svg {
-    transform: rotate(180deg);
-  }
-  #ti-details {
-    /* Always visible on desktop */
   }
   .ti-leg {
     display: flex;
@@ -1129,39 +1095,15 @@
       box-shadow: 0 4px 14px rgba(0,0,0,0.4);
       padding: 0.6rem 0.9rem;
     }
-    /* Reseplanerar-resultat: fäst i nederkanten, full bredd.
-       Kollapsad som standard — bara flikar syns. Expandera för detaljer. */
     #trip-itinerary-panel {
-      left: 0;
-      right: 0;
-      bottom: 0;
-      width: 100%;
-      max-width: 100%;
-      max-height: none;
-      border-radius: 12px 12px 0 0;
-      border-left: none;
-      border-right: none;
-      border-bottom: none;
-      padding: 0.55rem 0.75rem;
-      padding-bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
-      box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
+      width: 250px;
+      max-height: 50vh;
+      padding: 0.5rem;
+      left: 0.6rem;
+      bottom: 0.6rem;
     }
     #trip-itinerary-panel .tp-header {
       font-size: 0.8rem;
-      margin-bottom: 0.4rem;
-    }
-    #ti-expand-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    /* Kollapsad: dölj detaljer, visa bara header + flikar */
-    #trip-itinerary-panel:not(.expanded) #ti-details {
-      display: none;
-    }
-    #trip-itinerary-panel.expanded {
-      max-height: 55vh;
-      overflow-y: auto;
     }
     .ti-leg {
       font-size: 0.74rem;
@@ -1178,50 +1120,11 @@
     .ti-track, .ti-restid, .ti-transfer-bar {
       font-size: 0.68rem;
     }
-    /* Dölj headern när en resa är vald — mer plats åt kartan.
-       Byt till en enda 1fr-rad så kartan fyller hela höjden (annars
-       kunde grid + display:none ge 0-höjd → grå Leaflet-bakgrund). */
-    #app.trip-active {
-      grid-template-rows: 1fr;
-    }
-    #app.trip-active header {
-      display: none;
-    }
-    #app.trip-active #trip-planner-btn {
-      display: none;
-    }
-    #app.trip-active > div {
-      height: 100%;
-      min-height: 0;
-    }
-    /* Reseplanerare (sökformulär): samma bottom-sheet som resultatet */
     #trip-planner-panel {
-      left: 0;
-      right: 0;
+      width: 240px;
+      right: 1rem;
       top: auto;
-      bottom: 0;
-      width: 100%;
-      max-width: 100%;
-      border-radius: 12px 12px 0 0;
-      border-left: none;
-      border-right: none;
-      border-bottom: none;
-      padding: 0.7rem 0.75rem;
-      padding-bottom: calc(0.7rem + env(safe-area-inset-bottom, 0px));
-      box-shadow: 0 -4px 20px rgba(0,0,0,0.35);
-      max-height: 70vh;
-      overflow-y: auto;
-    }
-    /* Förslagslistan uppåt så den inte hamnar under skärmkanten */
-    #trip-planner-panel .tp-suggestions {
-      top: auto;
-      bottom: 100%;
-      margin-top: 0;
-      margin-bottom: 2px;
-    }
-    /* Dölj den flytande "Sök resa"-knappen medan formuläret är öppet */
-    #app.planner-open #trip-planner-btn {
-      display: none;
+      bottom: 4.2rem;
     }
     .subtitle {
       display: none;
@@ -1308,6 +1211,22 @@
     }
     #menu-btn {
       display: flex;
+      flex-shrink: 0;
+    }
+    header {
+      padding-right: calc(1.25rem + env(safe-area-inset-right, 0px));
+      padding-left: calc(1.25rem + env(safe-area-inset-left, 0px));
+    }
+    .header-right {
+      min-width: 0;
+      overflow: hidden;
+    }
+    #status {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 46vw;
     }
   }
 </style>
@@ -1415,19 +1334,12 @@
     <div id="trip-itinerary-panel">
       <div class="tp-header">
         <span>Din resa</span>
-        <div class="ti-header-actions">
-          <button id="ti-expand-btn" aria-label="Visa detaljer" title="Visa detaljer">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
-          </button>
-          <button id="ti-panel-close" aria-label="Stäng">&times;</button>
-        </div>
+        <button id="ti-panel-close" aria-label="Stäng">&times;</button>
       </div>
       <div id="ti-tabs"></div>
-      <div id="ti-details">
-        <div id="ti-fastest-label"></div>
-        <div id="ti-steps"></div>
-        <a id="ti-buy-ticket" href="https://www.skanetrafiken.se/" target="_blank" rel="noopener">Köp biljett</a>
-      </div>
+      <div id="ti-fastest-label"></div>
+      <div id="ti-steps"></div>
+      <a id="ti-buy-ticket" href="https://www.skanetrafiken.se/" target="_blank" rel="noopener">Köp biljett</a>
     </div>
     <div id="departure-board-panel">
       <div class="db-panel-header">
@@ -1647,27 +1559,6 @@ function debounce(fn, delayMs) {
     timer = setTimeout(() => fn(...args), delayMs);
   };
 }
-// Ungefärlig bounding box för Skåne (WGS84). Utesluter t.ex. Köpenhamn
-// (lon ~12.55) men inkluderar Helsingborg (~12.69) och hela östra Skåne.
-const SKANE_BOUNDS = {
-  latMin: 55.30,
-  latMax: 56.55,
-  lonMin: 12.67,
-  lonMax: 14.60,
-};
-function isStopInSkane(stop) {
-  const lat = parseFloat(stop.lat);
-  const lon = parseFloat(stop.lon);
-  if (Number.isFinite(lat) && Number.isFinite(lon)) {
-    return (
-      lat >= SKANE_BOUNDS.latMin && lat <= SKANE_BOUNDS.latMax &&
-      lon >= SKANE_BOUNDS.lonMin && lon <= SKANE_BOUNDS.lonMax
-    );
-  }
-  // Saknas koordinater: behåll hellre än att kasta bort (ovanligt).
-  return true;
-}
-
 function setupStopAutocomplete(inputEl, dropdownEl, onSelect) {
   const runSearch = debounce(async (query) => {
     if (query.trim().length < 2) {
@@ -1682,7 +1573,6 @@ function setupStopAutocomplete(inputEl, dropdownEl, onSelect) {
       const matches = (data.stopLocationOrCoordLocation || [])
         .map((x) => x.StopLocation)
         .filter(Boolean)
-        .filter(isStopInSkane)
         .slice(0, 8);
       if (!matches.length) {
         dropdownEl.classList.remove("visible");
@@ -1721,63 +1611,18 @@ function setupStopAutocomplete(inputEl, dropdownEl, onSelect) {
 setupStopAutocomplete(tpFromInput, document.getElementById("tp-from-suggestions"), (id) => { tpFromStopId = id; });
 setupStopAutocomplete(tpToInput, document.getElementById("tp-to-suggestions"), (id) => { tpToStopId = id; });
 
-const tiExpandBtn = document.getElementById("ti-expand-btn");
-const appEl = document.getElementById("app");
-let lastTripAllPoints = null;
-
-function setPlannerOpen(open) {
-  tripPlannerPanel.classList.toggle("visible", open);
-  appEl.classList.toggle("planner-open", open);
-}
 tripPlannerBtn.addEventListener("click", () => {
-  setPlannerOpen(!tripPlannerPanel.classList.contains("visible"));
+  tripPlannerPanel.classList.toggle("visible");
 });
-tpPanelClose.addEventListener("click", () => setPlannerOpen(false));
-
-// Efter layoutändring (header döljs/visas) måste Leaflet räkna om
-// storlek — annars blir kartan grå på mobil. Körs i flera steg så
-// webbläsaren hann applicera CSS innan invalidateSize.
-function refreshMapLayout(fitPoints) {
-  const run = () => {
-    map.invalidateSize({ animate: false });
-    if (fitPoints && fitPoints.length) {
-      try {
-        map.fitBounds(fitPoints, { padding: [40, 40], animate: false });
-      } catch (err) { /* ignorera ogiltiga bounds */ }
-    }
-  };
-  requestAnimationFrame(() => {
-    run();
-    requestAnimationFrame(run);
-    setTimeout(run, 100);
-    setTimeout(run, 300);
-  });
-}
-
-function closeTripItinerary() {
-  tripItineraryPanel.classList.remove("visible", "expanded");
-  appEl.classList.remove("trip-active");
+tpPanelClose.addEventListener("click", () => tripPlannerPanel.classList.remove("visible"));
+tiPanelClose.addEventListener("click", () => {
+  tripItineraryPanel.classList.remove("visible");
   tripLegsLayer.clearLayers();
   document.getElementById("ti-tabs").innerHTML = "";
-  lastTripAllPoints = null;
   if (tripDurationPopup) { map.removeLayer(tripDurationPopup); tripDurationPopup = null; }
   for (const popup of stopPopups) map.removeLayer(popup);
   stopPopups = [];
-  clearTripVehicleFilter();
-  refreshMapLayout();
-}
-
-tiPanelClose.addEventListener("click", closeTripItinerary);
-
-tiExpandBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const isExpanded = tripItineraryPanel.classList.toggle("expanded");
-  tiExpandBtn.setAttribute("aria-label", isExpanded ? "Dölj detaljer" : "Visa detaljer");
-  tiExpandBtn.setAttribute("title", isExpanded ? "Dölj detaljer" : "Visa detaljer");
 });
-
-// På mobilen: klick på flik visar resan på kartan men expanderar inte
-// automatiskt — användaren vecklar ut detaljerna själv via expand-knappen.
 
 tpUseLocationBtn.addEventListener("click", () => {
   if (!navigator.geolocation) {
@@ -1935,9 +1780,7 @@ function renderItinerarySteps(legs) {
       </div>
     `);
 
-    // Ingen "bytestid" efter en gångsträcka (t.ex. till första
-    // hållplatsen) — det är inte ett byte utan bara gång.
-    if (i < legs.length - 1 && leg.type !== "WALK") {
+    if (i < legs.length - 1) {
       const nextLeg = legs[i + 1];
       const thisArrMin = timeToMinutes(arrTime);
       const nextDepMin = timeToMinutes((nextLeg.Origin && nextLeg.Origin.time || "").slice(0, 5));
@@ -1963,7 +1806,7 @@ function renderItinerarySteps(legs) {
 // klick-på-rad redan använder), annars en enkel rak linje (alltid
 // fallet för gångetapper, där det ändå bara rör sig om korta sträckor).
 let stopPopups = [];
-function openStopPopup(lat, lon, label, name, time) {
+function openStopPopup(lat, lon, label, name) {
   const popup = L.popup({
     closeButton: false,
     autoClose: false,
@@ -1972,7 +1815,7 @@ function openStopPopup(lat, lon, label, name, time) {
     offset: [0, -10],
   })
     .setLatLng([lat, lon])
-    .setContent(`<b>${label}</b>${time ? ` <b>${time}</b>` : ""}${name ? `<br>${name}` : ""}`)
+    .setContent(`<b>${label}</b>${name ? `<br>${name}` : ""}`)
     .openOn(map);
   stopPopups.push(popup);
 }
@@ -2035,36 +1878,22 @@ async function drawTripLegsOnMap(legs) {
   }
   // Markörer vid från-, byt- och till-punkterna — med en alltid synlig
   // bubbla (precis som tidsrutan), inte bara en hover-tooltip.
-  // Visar avgångs-/ankomsttid så man ser när bussen/tåget går.
   legs.forEach((leg, i) => {
     const oLat = leg.Origin && leg.Origin.lat, oLon = leg.Origin && leg.Origin.lon;
     const dLat = leg.Destination && leg.Destination.lat, dLon = leg.Destination && leg.Destination.lon;
-    const depTime = (leg.Origin && leg.Origin.time || "").slice(0, 5);
-    const arrTime = (leg.Destination && leg.Destination.time || "").slice(0, 5);
     if (i === 0 && oLat != null) {
       L.circleMarker([oLat, oLon], { radius: 7, color: "#0e0e0e", weight: 2, fillColor: "#ffffff", fillOpacity: 1 })
         .addTo(tripLegsLayer);
-      // För första punkten: om första etappen är gång, visa tid för
-      // NÄSTA leg (när fordonet faktiskt går), annars legens egen avgång.
-      let fromTime = depTime;
-      if (leg.type === "WALK" && legs[1] && legs[1].Origin && legs[1].Origin.time) {
-        fromTime = (legs[1].Origin.time || "").slice(0, 5);
-      }
-      openStopPopup(oLat, oLon, "Från", leg.Origin.name || "", fromTime);
-    } else if (oLat != null && leg.type !== "WALK") {
-      // Första fordonsavgången efter en inledande gångsträcka är
-      // påstigning, inte byte — ingen orange markör eller "Byte"-bubbla.
-      const isFirstVehicleLeg = !legs.slice(0, i).some((l) => l.type !== "WALK");
-      if (!isFirstVehicleLeg) {
-        L.circleMarker([oLat, oLon], { radius: 6, color: "#0e0e0e", weight: 2, fillColor: "#f9a825", fillOpacity: 1 })
-          .addTo(tripLegsLayer);
-        openStopPopup(oLat, oLon, "Byte", leg.Origin.name || "", depTime);
-      }
+      openStopPopup(oLat, oLon, "Från", leg.Origin.name || "");
+    } else if (oLat != null) {
+      L.circleMarker([oLat, oLon], { radius: 6, color: "#0e0e0e", weight: 2, fillColor: "#f9a825", fillOpacity: 1 })
+        .addTo(tripLegsLayer);
+      openStopPopup(oLat, oLon, "Byte", leg.Origin.name || "");
     }
     if (i === legs.length - 1 && dLat != null) {
       L.circleMarker([dLat, dLon], { radius: 7, color: "#0e0e0e", weight: 2, fillColor: "#ffffff", fillOpacity: 1 })
         .addTo(tripLegsLayer);
-      openStopPopup(dLat, dLon, "Till", leg.Destination.name || "", arrTime);
+      openStopPopup(dLat, dLon, "Till", leg.Destination.name || "");
     }
   });
   if (allPoints.length) map.fitBounds(allPoints, { padding: [60, 60] });
@@ -2122,10 +1951,6 @@ async function showTripAtIndex(index) {
   const legs = trip.LegList && trip.LegList.Leg ? trip.LegList.Leg : [];
   renderItinerarySteps(legs);
   const allPoints = await drawTripLegsOnMap(legs);
-  lastTripAllPoints = allPoints;
-  // Visa bara fordon som tillhör resans linjer (övriga döljs tills
-  // resultattavlan stängs). Billig Set-lookup — ingen extra pollning.
-  applyTripVehicleFilter(legs);
   // Ny ruta för varje flik man växlar till, med den resans egen
   // restid — ersätter en eventuell tidigare visad ruta.
   showTripDurationPopup(trip, allPoints);
@@ -2171,14 +1996,9 @@ tpSearchBtn.addEventListener("click", async () => {
     currentTrips = [...trips].sort((a, b) => isoDurationToMinutes(a.duration) - isoDurationToMinutes(b.duration));
     renderTripTabs();
     await showTripAtIndex(0);
-    // På mobil: starta kollapsad (bara flikar), dölj header så kartan
-    // får hela ytan ovanför resultattabellen.
-    tripItineraryPanel.classList.remove("expanded");
     tripItineraryPanel.classList.add("visible");
-    appEl.classList.add("trip-active");
-    setPlannerOpen(false);
+    tripPlannerPanel.classList.remove("visible");
     tpStatus.textContent = "";
-    refreshMapLayout(lastTripAllPoints);
   } catch (err) {
     console.warn("Kunde inte hämta reseförslag (saknas en riktig ResRobot-nyckel i worker.js?):", err.message);
     tpStatus.textContent = "Kunde inte hämta reseförslag just nu.";
@@ -3414,85 +3234,12 @@ function isWithinRenderBounds(bounds, lat, lon) {
   return bounds.contains([lat, lon]);
 }
 
-// När en resa visas: bara fordon på resans linjenummer syns.
-// null = visa alla (normalläge).
-let tripLineFilter = null;
-let tripFilterAllowsOresundstag = false;
-
-function linesFromTripLegs(legs) {
-  const lines = new Set();
-  let allowsOresundstag = false;
-  for (const leg of legs) {
-    if (!leg || leg.type === "WALK") continue;
-    const product = leg.Product && leg.Product[0];
-    const candidates = [
-      product && product.displayNumber,
-      product && product.line,
-      product && product.num,
-      leg.name,
-      product && product.name,
-    ];
-    for (const c of candidates) {
-      if (!c) continue;
-      const s = String(c).trim();
-      const nums = s.match(/\d+/g);
-      if (nums) for (const n of nums) lines.add(n);
-      if (/^\d+[A-Za-z]?$/.test(s)) lines.add(s);
-    }
-    const nameLower = (
-      (leg.name || "") + " " + ((product && product.name) || "")
-    ).toLowerCase();
-    if (nameLower.includes("öresundståg") || nameLower.includes("oresund")) {
-      allowsOresundstag = true;
-      lines.add("Ö");
-    }
-  }
-  return { lines, allowsOresundstag };
-}
-
-function vehicleMatchesTripFilter(tripInfo) {
-  if (!tripLineFilter) return true;
-  if (!tripInfo) return false;
-  if (tripInfo.line != null && tripLineFilter.has(String(tripInfo.line))) return true;
-  if (tripFilterAllowsOresundstag && tripInfo.brand === "oresundstag") return true;
-  return false;
-}
-
-function applyTripVehicleFilter(legs) {
-  const { lines, allowsOresundstag } = linesFromTripLegs(legs);
-  tripLineFilter = lines;
-  tripFilterAllowsOresundstag = allowsOresundstag;
-  // Ta bort befintliga markörer som inte matchar — O(antal synliga markörer).
-  for (const [id, entry] of [...markers.entries()]) {
-    if (vehicleMatchesTripFilter(entry.tripInfo)) continue;
-    map.removeLayer(entry.marker);
-    map.closePopup(entry.popup);
-    markers.delete(id);
-  }
-  // Simulerade Öresundståg / färjor: dölj lagren när de inte hör till resan.
-  if (allowsOresundstag) {
-    if (!map.hasLayer(simulatedOresundstagLayer)) simulatedOresundstagLayer.addTo(map);
-  } else if (map.hasLayer(simulatedOresundstagLayer)) {
-    map.removeLayer(simulatedOresundstagLayer);
-  }
-  if (map.hasLayer(ferryLayer)) map.removeLayer(ferryLayer);
-}
-
-function clearTripVehicleFilter() {
-  tripLineFilter = null;
-  tripFilterAllowsOresundstag = false;
-  if (!map.hasLayer(simulatedOresundstagLayer)) simulatedOresundstagLayer.addTo(map);
-  if (!map.hasLayer(ferryLayer)) ferryLayer.addTo(map);
-  if (lastEntities) updateVehicles(lastEntities);
-}
-
 function updateVehicles(entities) {
   // Räkna ut kartans synliga gränser EN gång per genomgång, inte en
   // gång per fordon — sparar en hel del arbete när det finns hundratals
   // fordon i datan.
   const renderBounds = map.getBounds().pad(RENDER_BOUNDS_PADDING);
   const seenIds = new Set();
-  const filtering = tripLineFilter != null;
   for (const entity of entities) {
     const vp = entity.vehicle;
     if (!vp || !vp.position) continue;
@@ -3522,16 +3269,6 @@ function updateVehicles(entities) {
     }
     const tripId = vp.trip && vp.trip.tripId ? vp.trip.tripId : "";
     const tripInfo = tripInfoByTripId.get(tripId);
-    // Resefilter: hoppa över fordon som inte tillhör den valda resans linjer.
-    if (filtering && !vehicleMatchesTripFilter(tripInfo)) {
-      if (markers.has(id)) {
-        const entry = markers.get(id);
-        map.removeLayer(entry.marker);
-        map.closePopup(entry.popup);
-        markers.delete(id);
-      }
-      continue;
-    }
     const displayName = (tripInfo && tripInfo.line) || tripId || "okänd";
     const isMoving = vp.position.speed != null && vp.position.speed > 0.5;
     if (staticDataLoaded && displayName === "okänd") {
@@ -3728,7 +3465,13 @@ async function pollLoop() {
     lastEntities = entities;
     updateVehicles(entities);
     const count = markers.size;
-    setStatus("live", `live · ${count} fordon · uppdaterad ${new Date().toLocaleTimeString("sv-SE")}`);
+    // Kortare statustext på mobilen — den fullständiga texten (med
+    // tidsstämpel) var för lång och tryckte ut hamburgermenyn mot/
+    // förbi skärmkanten på smala skärmar.
+    const statusText = window.innerWidth <= 700
+      ? `live · ${count} fordon`
+      : `live · ${count} fordon · uppdaterad ${new Date().toLocaleTimeString("sv-SE")}`;
+    setStatus("live", statusText);
     if (isFirst) {
       firstPollLogged = true;
       console.timeEnd("⏱ TOTALT: skriptstart → första fordonet synligt");
@@ -3828,6 +3571,26 @@ async function loadVisitorStats() {
     monthEl.textContent = "–";
   }
 }
+// Tvingar helskärm på mobilen — webbläsare tillåter bara detta som
+// svar på en riktig användarinteraktion (inte automatiskt vid
+// sidladdning), så det triggas vid första tryck/pekning någonstans på
+// sidan. Fungerar bäst på Android/Chrome; äldre iOS-versioner saknar
+// stöd för Fullscreen API helt (då sker bara inget, utan fel).
+function requestPageFullscreen() {
+  const el = document.documentElement;
+  const request = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (request) request.call(el).catch(() => { /* nekad eller saknas stöd — inget att göra åt */ });
+}
+if (window.matchMedia("(max-width: 700px)").matches) {
+  const triggerFullscreenOnce = () => {
+    requestPageFullscreen();
+    document.removeEventListener("touchstart", triggerFullscreenOnce);
+    document.removeEventListener("click", triggerFullscreenOnce);
+  };
+  document.addEventListener("touchstart", triggerFullscreenOnce, { once: true });
+  document.addEventListener("click", triggerFullscreenOnce, { once: true });
+}
+
 (async function init() {
   console.time("⏱ init() start → loadProtoSchema klar");
   await loadProtoSchema();
