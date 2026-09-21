@@ -813,10 +813,9 @@
   }
   .stop-board-row {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.3rem 0.1rem 0.3rem 0.55rem;
-    border-left: 3px solid var(--stop-board-line-color, var(--accent));
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.3rem 0.1rem;
     font-size: 0.8rem;
     opacity: 0.5;
     transition: opacity 0.2s;
@@ -831,6 +830,7 @@
   .stop-board-row-time {
     flex-shrink: 0;
     min-width: 2.6em;
+    align-self: center;
     text-align: right;
     font-variant-numeric: tabular-nums;
     color: var(--muted);
@@ -838,8 +838,47 @@
   .stop-board-row-current .stop-board-row-time {
     color: var(--fg);
   }
+  /* Den gula (linjefärgade) linjen mellan tiden och hållplatsnamnet,
+     med en hållplats-prick per rad — som skylten ombord på bilden du
+     visade. Linjen byggs av en lodrät stapel i varje rads mittkolumn;
+     eftersom raderna ligger direkt efter varandra bildar staplarna
+     tillsammans en sammanhängande linje genom hela listan. */
+  .stop-board-row-line {
+    position: relative;
+    flex-shrink: 0;
+    width: 16px;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .stop-board-row-line::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 4px;
+    transform: translateX(-50%);
+    background: var(--stop-board-line-color, var(--accent));
+  }
+  .stop-board-row-dot {
+    position: relative;
+    z-index: 1;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 3px solid var(--stop-board-line-color, var(--accent));
+    box-sizing: border-box;
+  }
+  .stop-board-row-current .stop-board-row-dot {
+    width: 13px;
+    height: 13px;
+  }
   .stop-board-row-name {
     min-width: 0;
+    align-self: center;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2872,7 +2911,16 @@ async function fetchTripUpdates() {
   // Long-objekt istället för ett vanligt tal, vilket skulle krascha all
   // efterföljande tidsaritmetik. Säkert här (sekunder sedan 1970 ryms
   // gott inom Number.MAX_SAFE_INTEGER).
-  const obj = FeedMessageType.toObject(message, { defaults: true, longs: Number });
+  // OBS: MEDVETET UTAN "defaults: true" här (till skillnad från
+  // fordonspositionerna) — Trafiklabs feed skickar ofta BARA "delay"
+  // per hållplats, inte det absoluta "time". Med defaults:true skulle
+  // protobufjs fylla i det saknade "time"-fältet med 0 (dess
+  // "nollvärde") istället för att lämna det odefinierat — vilket
+  // tolkades som "tiden är år 1970", dvs en enorm negativ ETA, och
+  // fick ALLA hållplatser att visa "Nu" samtidigt. Utan defaults
+  // förblir ett verkligt saknat fält undefined, så != null-kollarna
+  // nedan faktiskt kan skilja "ingen data" från "data är 0".
+  const obj = FeedMessageType.toObject(message, { longs: Number });
   return obj.entity || [];
 }
 function buildTripUpdatesIndex(entities) {
@@ -2961,15 +3009,22 @@ function updateStopBoard() {
     const live = liveUpdates ? liveUpdates.get(s.stopId) : null;
     let etaSeconds = null;
     if (live && live.time != null) {
+      // Feeden gav en absolut förväntad tid för just den här hållplatsen.
       etaSeconds = live.time - nowSec;
+    } else if (live && live.delay != null && s.arr != null) {
+      // Vanligaste fallet i praktiken: feeden ger bara en försening i
+      // sekunder, inte en absolut tid — lägg den ovanpå tabelltiden.
+      etaSeconds = (midnightSec + s.arr + live.delay) - nowSec;
     } else if (s.arr != null) {
+      // Ingen realtidsdata alls för just den här hållplatsen — visa
+      // ren tabelltid.
       etaSeconds = midnightSec + s.arr - nowSec;
     }
     const isPassed = currentSeq != null && s.seq < currentSeq;
     const isCurrent = currentSeq != null && s.seq === currentSeq;
     const rowClass = "stop-board-row" + (isPassed ? " stop-board-row-passed" : "") + (isCurrent ? " stop-board-row-current" : "");
     const timeText = isPassed ? "" : formatStopBoardEta(etaSeconds);
-    return `<div class="${rowClass}"><span class="stop-board-row-time">${timeText}</span><span class="stop-board-row-name">${s.name}</span></div>`;
+    return `<div class="${rowClass}"><span class="stop-board-row-time">${timeText}</span><span class="stop-board-row-line"><span class="stop-board-row-dot"></span></span><span class="stop-board-row-name">${s.name}</span></div>`;
   }).join("");
   stopBoardListEl.innerHTML = rowsHtml;
   stopBoardListEl.style.setProperty("--stop-board-line-color", tripInfo.color ? `#${tripInfo.color}` : "");
