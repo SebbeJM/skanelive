@@ -814,7 +814,11 @@ function minDistanceToPointMeters(points, target) {
     for (const { seq, stopId, arr, dep } of sorted) {
       const s = stopsById.get(stopId);
       if (!s || !s.name) continue;
-      stops.push({ stopId, name: s.name, seq, arr, dep });
+      // lat/lon behövs för att kunna avgöra vilken hållplats fordonet
+      // FAKTISKT är närmast just nu (GPS-baserat) — TripUpdates-feeden
+      // visade sig inte alltid tappa redan passerade hållplatser ur sin
+      // lista, vilket gjorde att "nuvarande hållplats" kunde stå still.
+      stops.push({ stopId, name: s.name, seq, arr, dep, lat: s.lat, lon: s.lon });
     }
     if (stops.length < 2) continue;
     stopBoardTrips[tripId] = { routeId, line: info.shortName, color: info.color, stops };
