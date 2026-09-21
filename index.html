@@ -817,15 +817,26 @@
     gap: 0.5rem;
     padding: 0.3rem 0.1rem;
     font-size: 0.8rem;
+  }
+  .stop-board-row.stop-board-row-current {
+    font-weight: 700;
+  }
+  /* Dimningen sitter bara på TEXTEN (tid + namn) — inte på linjen/
+     prickarna, se nedan — så att den gula linjen alltid syns som en
+     obruten, hel sträcka genom hela listan, oavsett om hållplatsen är
+     passerad, aktuell eller kommande. */
+  .stop-board-row-time,
+  .stop-board-row-name {
     opacity: 0.5;
     transition: opacity 0.2s;
   }
-  .stop-board-row.stop-board-row-passed {
+  .stop-board-row.stop-board-row-passed .stop-board-row-time,
+  .stop-board-row.stop-board-row-passed .stop-board-row-name {
     opacity: 0.3;
   }
-  .stop-board-row.stop-board-row-current {
+  .stop-board-row.stop-board-row-current .stop-board-row-time,
+  .stop-board-row.stop-board-row-current .stop-board-row-name {
     opacity: 1;
-    font-weight: 700;
   }
   .stop-board-row-time {
     flex-shrink: 0;
@@ -842,7 +853,8 @@
      med en hållplats-prick per rad — som skylten ombord på bilden du
      visade. Linjen byggs av en lodrät stapel i varje rads mittkolumn;
      eftersom raderna ligger direkt efter varandra bildar staplarna
-     tillsammans en sammanhängande linje genom hela listan. */
+     tillsammans en sammanhängande linje genom hela listan — och håller
+     alltid full opacitet (se ovan) så den aldrig ser bruten ut. */
   .stop-board-row-line {
     position: relative;
     flex-shrink: 0;
@@ -872,9 +884,13 @@
     border: 3px solid var(--stop-board-line-color, var(--accent));
     box-sizing: border-box;
   }
+  /* Hållplatsen bussen just nu är vid — hel, ifylld prick i linjens
+     färg istället för vit med kantlinje, så den syns tydligt var
+     bussen har stannat. */
   .stop-board-row-current .stop-board-row-dot {
     width: 13px;
     height: 13px;
+    background: var(--stop-board-line-color, var(--accent));
   }
   .stop-board-row-name {
     min-width: 0;
@@ -1016,9 +1032,16 @@
       border-left: none;
       border-right: none;
       box-shadow: 0 -4px 16px rgba(0,0,0,0.45);
+      padding: 0.45rem 0.7rem;
     }
+    /* Betydligt lägre på mobilen — täckte tidigare nästan halva
+       skärmen. Den är scrollbar ändå, så en kort synlig yta räcker. */
     #stop-board-list {
-      max-height: 26vh;
+      max-height: 108px;
+    }
+    .stop-board-row {
+      padding: 0.2rem 0.1rem;
+      font-size: 0.76rem;
     }
     header {
       flex-wrap: wrap;
@@ -2931,7 +2954,11 @@ function buildTripUpdatesIndex(entities) {
     const stopMap = new Map();
     for (const stu of (tu.stopTimeUpdate || [])) {
       if (!stu.stopId) continue;
-      const ev = stu.arrival || stu.departure;
+      // Föredra vilken som faktiskt har data — "arrival" kan finnas
+      // som ett tomt objekt (fältet skickat men utan delay/time) medan
+      // "departure" har de riktiga värdena, eller tvärtom.
+      const hasData = (o) => o && (o.delay != null || o.time != null);
+      const ev = hasData(stu.arrival) ? stu.arrival : (hasData(stu.departure) ? stu.departure : (stu.arrival || stu.departure));
       stopMap.set(stu.stopId, {
         seq: stu.stopSequence != null ? stu.stopSequence : null,
         delay: ev && ev.delay != null ? ev.delay : null,
@@ -3020,8 +3047,20 @@ function updateStopBoard() {
       // ren tabelltid.
       etaSeconds = midnightSec + s.arr - nowSec;
     }
-    const isPassed = currentSeq != null && s.seq < currentSeq;
+    let isPassed = currentSeq != null && s.seq < currentSeq;
     const isCurrent = currentSeq != null && s.seq === currentSeq;
+    // Skyddsnät: lita inte BARA på att jämföra sekvensnummer (det kan
+    // slå fel om realtidsfeedens stop_sequence av någon anledning inte
+    // stämmer exakt överens med vår egen byggda lista, t.ex. vid en
+    // linje med flera turer/slingor) — en hållplats vars uträknade tid
+    // är tydligt NEGATIV är i praktiken redan passerad, oavsett vad
+    // sekvensnumret råkar säga. Det var DETTA som gav "Nu" på flera
+    // hållplatser samtidigt i din skärmdump. Undantag: den hållplats
+    // som faktiskt är markerad som aktuell ska ALDRIG blankas ut även
+    // om klockan hunnit gå om den lite.
+    if (!isCurrent && etaSeconds != null && etaSeconds < -30) {
+      isPassed = true;
+    }
     const rowClass = "stop-board-row" + (isPassed ? " stop-board-row-passed" : "") + (isCurrent ? " stop-board-row-current" : "");
     const timeText = isPassed ? "" : formatStopBoardEta(etaSeconds);
     return `<div class="${rowClass}"><span class="stop-board-row-time">${timeText}</span><span class="stop-board-row-line"><span class="stop-board-row-dot"></span></span><span class="stop-board-row-name">${s.name}</span></div>`;
@@ -3032,10 +3071,17 @@ function updateStopBoard() {
   positionStopBoard();
 
   // Scrolla mjukt så den aktuella (eller första ej passerade)
-  // hållplatsen alltid syns, ungefär som en riktig ombordskylt som
-  // följer med resan.
+  // hållplatsen hamnar en bit in från toppen av den synliga listan —
+  // INTE centrerad och inte längst upp — så man mest ser hållplatserna
+  // som är KVAR, med bara lite sammanhang bakåt om var bussen redan
+  // varit. scrollIntoView("nearest"/"center") gav antingen för mycket
+  // eller ingen bakåt-kontext, så räknar ut positionen själv istället.
   const targetRow = stopBoardListEl.querySelector(".stop-board-row-current") || stopBoardListEl.querySelector(".stop-board-row:not(.stop-board-row-passed)");
-  if (targetRow) targetRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (targetRow) {
+    const offsetFromTop = stopBoardListEl.clientHeight * 0.22;
+    const targetScrollTop = targetRow.offsetTop - offsetFromTop;
+    stopBoardListEl.scrollTo({ top: Math.max(0, targetScrollTop), behavior: "smooth" });
+  }
 }
 // Positionerar hållplats-rutan i förhållande till den redan synliga
 // följ-rutan — läses av varje gång rutan uppdateras (följ-rutans bredd
