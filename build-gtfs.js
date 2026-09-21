@@ -133,6 +133,12 @@ function classifyColorForRoute(shortName, longName, routeType) {
   // Simrishamn"), medan själva linjenumret bara är en vanlig kort
   // siffra ("5") som annars skulle råka tolkas som en stadsbusslinje.
   if (name.includes("skåneexpressen")) return "f9a825";
+  // "NO"-linjer (Närtrafik — anropsstyrd lokaltrafik i mindre orter,
+  // typ "Staffanstorp NO1", "HÖRBY NO 2") är INTE riktig fast
+  // stadsbusstrafik, trots att de ofta har korta nummer som annars
+  // skulle tolkas som stadsbuss (grönt) av tumregeln nedan. Ger dem en
+  // egen, neutral färg istället för att felaktigt gissa grönt.
+  if (/\bno\s?\d/.test(name)) return "757575";
   const trimmed = (shortName || "").trim();
   if (/^\d+$/.test(trimmed)) {
     if (trimmed.length <= 2) return "2e7d32";
@@ -372,6 +378,51 @@ async function buildGtfsArtifacts() {
     }
   }
   console.log(`shapes.txt: ${shapePointsById.size} körvägar (förenklade)`);
+
+  // RENDIAGNOSTIK (ändrar ingenting, bara loggar) — letar upp alla
+  // linjer där DEN SANNOLIKT VALDA sträckan (flest punkter, samma
+  // urvalslogik som routeShapes-byggningen längre ner använder) är
+  // misstänkt rak, så vi kan se på RIKTIG data om teorin om
+  // "raka genvägar i källdatan" faktiskt stämmer eller inte, innan vi
+  // rör något som påverkar den skarpa sidan.
+  function diagnosticStraightnessRatio(points) {
+    if (points.length < 2) return null;
+    const first = points[0], last = points[points.length - 1];
+    const straightDist = minDistanceToPointMeters([first], last);
+    if (straightDist < 50) return null;
+    let pathLength = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      pathLength += minDistanceToPointMeters([points[i]], points[i + 1]);
+    }
+    return { ratio: pathLength / straightDist, straightDist, pathLength };
+  }
+  let suspiciousCount = 0;
+  for (const [routeId, routeInfo] of routesById) {
+    const shapeIds = shapeIdsByRoute.get(routeId);
+    if (!shapeIds || shapeIds.size === 0) continue;
+    let bestShapeId = null, bestPoints = null;
+    for (const shapeId of shapeIds) {
+      const points = shapePointsById.get(shapeId);
+      if (points && (!bestPoints || points.length > bestPoints.length)) {
+        bestShapeId = shapeId;
+        bestPoints = points;
+      }
+    }
+    if (!bestPoints || bestPoints.length < 2) continue;
+    const straightness = diagnosticStraightnessRatio(bestPoints);
+    if (straightness && straightness.ratio < 1.08) {
+      suspiciousCount++;
+      if (suspiciousCount <= 40) {
+        console.log(
+          `DIAGNOS misstänkt rak sträcka: route_id=${routeId}, shortName="${routeInfo.shortName}", ` +
+          `longName="${routeInfo.longName}", punkter=${bestPoints.length}, ratio=${straightness.ratio.toFixed(3)}, ` +
+          `fågelväg=${Math.round(straightness.straightDist)}m, sträckans_längd=${Math.round(straightness.pathLength)}m, ` +
+          `start=[${bestPoints[0][0].toFixed(4)},${bestPoints[0][1].toFixed(4)}], slut=[${bestPoints[bestPoints.length - 1][0].toFixed(4)},${bestPoints[bestPoints.length - 1][1].toFixed(4)}]`
+        );
+      }
+    }
+  }
+  console.log(`DIAGNOS: ${suspiciousCount} linjer totalt med misstänkt rak "bästa" sträcka (ratio < 1.08), visar max 40 rader ovan`);
 
   // De nio riktiga SkåneExpressen-linjerna identifieras nu via sina
   // EXAKTA, unika route_id (hittade genom diagnostiken, bekräftade
@@ -678,6 +729,21 @@ function minDistanceToPointMeters(points, target) {
   // Bygger på samma stop_times-genomgång som gjordes för tåg tidigare,
   // fast nu för ALLA linjer (bussar också).
   const routeShapes = {};
+  // Allmän kvalitetskoll: en sträcka som bara är en rak genväg mellan
+  // start och slut (istället för att följa gatorna) har en total
+  // längd nästan lika med FÅGELVÄGEN mellan samma två punkter — en
+  // riktig krokig gata är nästan alltid märkbart längre än så.
+  function isSuspiciouslyStraight(points) {
+    if (points.length < 3) return true;
+    const first = points[0], last = points[points.length - 1];
+    const straightDist = minDistanceToPointMeters([first], last);
+    if (straightDist < 50) return false; // för korta sträckor säger avståndet inget säkert
+    let pathLength = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      pathLength += minDistanceToPointMeters([points[i]], points[i + 1]);
+    }
+    return pathLength / straightDist < 1.08;
+  }
   for (const [routeId, routeInfo] of routesById) {
     const shapeIds = shapeIdsByRoute.get(routeId);
     if (!shapeIds || shapeIds.size === 0) continue;
@@ -693,7 +759,7 @@ function minDistanceToPointMeters(points, target) {
     for (const shapeId of shapeIds) {
       const points = shapePointsById.get(shapeId);
       if (!points) continue;
-      const isGood = !isOresundstag || (kastrupCoords && minDistanceToPointMeters(points, kastrupCoords) <= 1500);
+      const isGood = !isSuspiciouslyStraight(points) && (!isOresundstag || (kastrupCoords && minDistanceToPointMeters(points, kastrupCoords) <= 1500));
       if (!bestPoints || (isGood && !bestIsGood) || (isGood === bestIsGood && points.length > bestPoints.length)) {
         bestShapeId = shapeId;
         bestPoints = points;
@@ -726,6 +792,36 @@ function minDistanceToPointMeters(points, target) {
     };
   }
 
+  // ---- stop_board.json: hållplatslistan (med schemalagda tider) per
+  // resa, för den nya "hållplats-ruta"-funktionen i fordonspopupen
+  // (visar var man är och tid till nästa hållplats, som skärmen ombord
+  // på bussen). Byggs MEDVETET bara för ett litet urval linjer just nu
+  // (styrs av STOP_BOARD_ROUTE_SHORT_NAMES nedan) — funktionen testas
+  // först på en enda linje innan den breddas till hela nätet, både för
+  // att hålla filstorleken nere och för att kunna se hur det ser ut
+  // innan alla linjer får den. Bredda listan (eller sätt "*" och
+  // hantera det i loopen) när funktionen är klar för lansering.
+  const STOP_BOARD_ROUTE_SHORT_NAMES = new Set(["166"]);
+  const stopBoardTrips = {};
+  let stopBoardTripCount = 0;
+  for (const [tripId, routeId] of routeIdByTripId) {
+    const info = routesById.get(routeId);
+    if (!info || !STOP_BOARD_ROUTE_SHORT_NAMES.has(info.shortName)) continue;
+    const rawStops = stopSeqByTripId.get(tripId);
+    if (!rawStops || rawStops.length < 2) continue;
+    const sorted = [...rawStops].sort((a, b) => a.seq - b.seq);
+    const stops = [];
+    for (const { seq, stopId, arr, dep } of sorted) {
+      const s = stopsById.get(stopId);
+      if (!s || !s.name) continue;
+      stops.push({ stopId, name: s.name, seq, arr, dep });
+    }
+    if (stops.length < 2) continue;
+    stopBoardTrips[tripId] = { routeId, line: info.shortName, color: info.color, stops };
+    stopBoardTripCount++;
+  }
+  console.log(`stop_board.json: ${stopBoardTripCount} resor med hållplatslista byggda (linjer: ${[...STOP_BOARD_ROUTE_SHORT_NAMES].join(", ")})`);
+
   const builtAt = new Date().toISOString();
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUTPUT_DIR, "trip_lookup.json"), JSON.stringify({ builtAt, trips: tripLookup }));
@@ -734,6 +830,7 @@ function minDistanceToPointMeters(points, target) {
   fs.writeFileSync(path.join(OUTPUT_DIR, "bus_stops.json"), JSON.stringify({ builtAt, stops: busStops }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "route_shapes.json"), JSON.stringify({ builtAt, routes: routeShapes }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "oresundstag_schedule.json"), JSON.stringify({ builtAt, trips: oresundstagSchedule, shapes: oresundstagShapesById }));
+  fs.writeFileSync(path.join(OUTPUT_DIR, "stop_board.json"), JSON.stringify({ builtAt, trips: stopBoardTrips }));
 
   return {
     tripCount: Object.keys(tripLookup).length,
@@ -742,6 +839,7 @@ function minDistanceToPointMeters(points, target) {
     busStopCount: busStops.length,
     routeShapeCount: Object.keys(routeShapes).length,
     oresundstagScheduleCount: oresundstagSchedule.length,
+    stopBoardTripCount,
   };
 }
 
