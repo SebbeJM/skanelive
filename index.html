@@ -852,6 +852,10 @@
     top: 0;
     bottom: 0;
     width: 4px;
+    /* JS sätter "left" till kolumnens MITTPUNKT — utan denna transform
+       hamnar linjens VÄNSTERKANT där istället för dess mittpunkt,
+       vilket skiftade hela linjen ~2px åt höger om prickarnas center. */
+    transform: translateX(-50%);
     background: var(--stop-board-line-color, var(--accent));
     z-index: 0;
   }
@@ -1244,8 +1248,8 @@ const BUS_STOPS_URL = "data/bus_stops.json";
 const ROUTE_SHAPES_URL = "data/route_shapes.json";
 const ORESUNDSTAG_SCHEDULE_URL = "data/oresundstag_schedule.json";
 // Hållplatslistan (schemalagda tider) per resa, för hållplats-rutan i
-// fordonspopupen — byggs just nu bara för ett litet urval linjer
-// (testfas), se STOP_BOARD_ROUTE_SHORT_NAMES i build-gtfs.js.
+// fordonspopupen — byggs för all riktig trafik (se build-gtfs.js),
+// utom de simulerade Öresundstågen.
 const STOP_BOARD_URL = "data/stop_board.json";
 const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
 const POLL_INTERVAL_MS = 2000; // 2 sekunder — Silver-nyckel godkänd
@@ -2257,12 +2261,15 @@ let oresundstagShapesById = {};
 
 // ============================================================
 // Hållplats-rutan — visar hållplatserna för den följda resan (som
-// skylten ombord på fordonet), med minuter till nästa. Testfas: bara
-// aktiv för linjer i STOP_BOARD_ENABLED_LINES nedan.
+// skylten ombord på fordonet), med minuter till nästa. Efter avslutat
+// betatest (som bara körde linje 166) är funktionen nu aktiv för all
+// riktig trafik — undantaget är de simulerade Öresundstågen (de har
+// ingen riktig GTFS-Realtime-position/TripUpdates att visa live-data
+// för), vilka filtreras bort via STOP_BOARD_EXCLUDED_BRANDS nedan.
 // ============================================================
 let stopBoardTripsData = {}; // tripId -> { routeId, line, color, stops:[{stopId,name,seq,arr,dep}] }
 let tripUpdatesByTripId = new Map(); // tripId -> Map(stopId -> {seq, delay, time})
-const STOP_BOARD_ENABLED_LINES = new Set(["166"]);
+const STOP_BOARD_EXCLUDED_BRANDS = new Set(["oresundstag"]);
 const simulatedOresundstagLayer = L.layerGroup().addTo(map);
 // En "låtsas"-tripInfo som återanvänder exakt samma ikonstil som
 // riktiga Öresundståg-fordon (samma färg, samma rälsutseende).
@@ -3127,7 +3134,7 @@ stopBoardJumpBtn.addEventListener("click", (e) => {
 function updateStopBoard() {
   const tripInfo = followedTripInfo;
   const tripId = followedTripId;
-  if (!tripId || !tripInfo || !STOP_BOARD_ENABLED_LINES.has(tripInfo.line)) {
+  if (!tripId || !tripInfo || STOP_BOARD_EXCLUDED_BRANDS.has(tripInfo.brand)) {
     stopBoardEl.classList.remove("visible");
     stopBoardShownForTripId = null;
     stopBoardUserScrolledAway = false;
