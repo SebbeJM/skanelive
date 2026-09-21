@@ -806,10 +806,54 @@
   #stop-board.minimized #stop-board-list {
     display: none;
   }
+  /* Pilknappen som hoppar tillbaka till fordonets nuvarande hållplats
+     — visas bara när man scrollat bort manuellt (se JS), dold i
+     "normalläget" (dvs. när listan redan följer fordonet automatiskt). */
+  #stop-board-jump-btn {
+    display: none;
+    position: absolute;
+    right: 0.65rem;
+    bottom: 0.55rem;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: none;
+    background: var(--stop-board-line-color, var(--accent));
+    color: #0a0a0a;
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.55);
+    z-index: 2;
+  }
+  #stop-board-jump-btn.visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #stop-board.minimized #stop-board-jump-btn {
+    display: none;
+  }
   #stop-board-list {
+    position: relative;
     max-height: 200px;
     overflow-y: auto;
     scroll-behavior: smooth;
+  }
+  .stop-board-rows-wrap {
+    position: relative;
+  }
+  /* EN enda sammanhängande lodrät linje för hela listan (istället för
+     en egen bit per rad, som gav synliga glapp mellan raderna) —
+     positioneras och färgsätts av JS (updateStopBoard) eftersom dess
+     vågräta läge beror på hur brett tidskolumnen faktiskt blir. */
+  .stop-board-timeline-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: var(--stop-board-line-color, var(--accent));
+    z-index: 0;
   }
   .stop-board-row {
     display: flex;
@@ -840,7 +884,14 @@
   }
   .stop-board-row-time {
     flex-shrink: 0;
-    min-width: 2.6em;
+    /* FAST bredd (inte bara min-width) — annars kan olika lång text
+       ("Nu" vs "10 min") göra att prick-kolumnen hamnar på lite olika
+       vågrät position från rad till rad, vilket skulle få den
+       gemensamma linjen (se .stop-board-timeline-line) att inte
+       stämma exakt överens med varje prick. */
+    width: 3em;
+    overflow: hidden;
+    white-space: nowrap;
     align-self: center;
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -849,30 +900,17 @@
   .stop-board-row-current .stop-board-row-time {
     color: var(--fg);
   }
-  /* Den gula (linjefärgade) linjen mellan tiden och hållplatsnamnet,
-     med en hållplats-prick per rad — som skylten ombord på bilden du
-     visade. Linjen byggs av en lodrät stapel i varje rads mittkolumn;
-     eftersom raderna ligger direkt efter varandra bildar staplarna
-     tillsammans en sammanhängande linje genom hela listan — och håller
-     alltid full opacitet (se ovan) så den aldrig ser bruten ut. */
+  /* Kolumnen som håller hållplats-pricken — själva linjen ritas INTE
+     här längre (se .stop-board-timeline-line ovan), bara pricken. */
   .stop-board-row-line {
     position: relative;
+    z-index: 1;
     flex-shrink: 0;
     width: 16px;
-    align-self: stretch;
+    align-self: center;
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-  .stop-board-row-line::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    width: 4px;
-    transform: translateX(-50%);
-    background: var(--stop-board-line-color, var(--accent));
   }
   .stop-board-row-dot {
     position: relative;
@@ -1165,6 +1203,7 @@
         <button id="stop-board-minimize-btn" aria-label="Minimera hållplatslistan">−</button>
       </div>
       <div id="stop-board-list"></div>
+      <button id="stop-board-jump-btn" aria-label="Hoppa till nuvarande hållplats">↓</button>
     </div>
     <div id="line-hud">
       <div class="follow-hud-inner">
@@ -1607,6 +1646,11 @@ let followedTripInfo = null;
 // slå upp hållplatslistan (stop_board.json) och realtidsförseningarna
 // (TripUpdates) för just DEN HÄR resan, till "hållplats-rutan".
 let followedTripId = null;
+// Fordonets senaste kända position — används av hållplats-rutan för att
+// avgöra vilken hållplats fordonet FAKTISKT är närmast just nu
+// (GPS-baserat, uppdateras varje poll), istället för att bara lita på
+// vilka hållplatser TripUpdates-feeden råkar lista just nu.
+let followedLatLng = null;
 const FOLLOW_ZOOM = 16;
 const followHud = document.getElementById("follow-hud");
 const followHudText = document.getElementById("follow-hud-text");
@@ -1821,6 +1865,7 @@ function beginFollowSession(id, latlng, hudData) {
   // egen motsvarande knapp för samma sak.
   lineHud.classList.remove("visible");
   followedId = id;
+  followedLatLng = latlng;
   // VIKTIGT: "visible" måste sättas INNAN updateFollowHud() (som i sin
   // tur anropar updateStopBoard()) — annars mäts följ-rutans bredd/höjd
   // medan den fortfarande är display:none (0×0), och hållplats-rutan
@@ -1868,9 +1913,13 @@ function stopFollow() {
   }
   followedTripInfo = null;
   followedTripId = null;
+  followedLatLng = null;
   followHud.classList.remove("visible");
   followHudText.innerHTML = "";
   stopBoardEl.classList.remove("visible");
+  stopBoardShownForTripId = null;
+  stopBoardUserScrolledAway = false;
+  stopBoardJumpBtn.classList.remove("visible");
 }
 
 function updateFollowHud(entry) {
@@ -1878,6 +1927,10 @@ function updateFollowHud(entry) {
   const tripInfo = entry.tripInfo;
   followedTripInfo = tripInfo || null;
   followedTripId = entry.tripId || null;
+  // Uppdatera senaste kända position (varje poll, ~2s) — hållplats-
+  // rutan använder den för att avgöra vilken hållplats fordonet
+  // FAKTISKT är närmast just nu.
+  if (entry.marker) followedLatLng = entry.marker.getLatLng();
   const displayName = (tripInfo && tripInfo.line) || "okänd";
   const destination = (tripInfo && tripInfo.destination) || "";
   const speedText = entry.lastSpeed != null
@@ -2992,6 +3045,7 @@ async function tripUpdatesPollLoop() {
 const stopBoardEl = document.getElementById("stop-board");
 const stopBoardListEl = document.getElementById("stop-board-list");
 const stopBoardMinimizeBtn = document.getElementById("stop-board-minimize-btn");
+const stopBoardJumpBtn = document.getElementById("stop-board-jump-btn");
 let stopBoardMinimized = false;
 stopBoardMinimizeBtn.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -3005,28 +3059,92 @@ function formatStopBoardEta(etaSeconds) {
   if (mins <= 0) return "Nu";
   return `${mins} min`;
 }
+
+// ------------------------------------------------------------
+// Scrollposition — listan byggdes tidigare om (innerHTML) och
+// scrollades tillbaka till fordonets nuvarande hållplats vid VARJE
+// uppdatering (var 2:e sekund), vilket ryckte tillbaka den om man
+// precis scrollat manuellt. Nu: scrolla bara automatiskt när man är
+// kvar i "normalläget" (inte scrollat bort själv) — annars bevaras
+// den manuella positionen, och en liten pilknapp låter en hoppa
+// tillbaka. stopBoardProgrammaticScroll skyddar mot att VÅRA EGNA
+// scroll-anrop feltolkas som att användaren scrollat bort, precis
+// som programmaticCameraMove gör för kartan.
+// ------------------------------------------------------------
+let stopBoardUserScrolledAway = false;
+let stopBoardProgrammaticScroll = false;
+let stopBoardProgrammaticScrollResetTimer = null;
+let stopBoardShownForTripId = null;
+function stopBoardBeginProgrammaticScroll(resetDelayMs) {
+  stopBoardProgrammaticScroll = true;
+  clearTimeout(stopBoardProgrammaticScrollResetTimer);
+  stopBoardProgrammaticScrollResetTimer = setTimeout(() => {
+    stopBoardProgrammaticScroll = false;
+  }, resetDelayMs);
+}
+function scrollStopBoardToCurrent(smooth) {
+  const targetRow = stopBoardListEl.querySelector(".stop-board-row-current") || stopBoardListEl.querySelector(".stop-board-row:not(.stop-board-row-passed)");
+  if (!targetRow) return;
+  // En bit in från toppen — INTE centrerad och inte längst upp — så
+  // man mest ser hållplatserna som är KVAR, med lite sammanhang bakåt.
+  const offsetFromTop = stopBoardListEl.clientHeight * 0.22;
+  const targetScrollTop = Math.max(0, targetRow.offsetTop - offsetFromTop);
+  stopBoardBeginProgrammaticScroll(smooth ? 700 : 50);
+  stopBoardListEl.scrollTo({ top: targetScrollTop, behavior: smooth ? "smooth" : "auto" });
+  stopBoardUserScrolledAway = false;
+  stopBoardJumpBtn.classList.remove("visible");
+}
+stopBoardListEl.addEventListener("scroll", () => {
+  if (stopBoardProgrammaticScroll) return; // vårt eget scrollTo, inte användaren
+  stopBoardUserScrolledAway = true;
+  stopBoardJumpBtn.classList.add("visible");
+});
+stopBoardJumpBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  scrollStopBoardToCurrent(true);
+});
 function updateStopBoard() {
   const tripInfo = followedTripInfo;
   const tripId = followedTripId;
   if (!tripId || !tripInfo || !STOP_BOARD_ENABLED_LINES.has(tripInfo.line)) {
     stopBoardEl.classList.remove("visible");
+    stopBoardShownForTripId = null;
+    stopBoardUserScrolledAway = false;
+    stopBoardJumpBtn.classList.remove("visible");
     return;
   }
   const staticTrip = stopBoardTripsData[tripId];
   if (!staticTrip || !staticTrip.stops || staticTrip.stops.length < 2) {
     stopBoardEl.classList.remove("visible");
+    stopBoardShownForTripId = null;
+    stopBoardUserScrolledAway = false;
+    stopBoardJumpBtn.classList.remove("visible");
     return;
   }
   const liveUpdates = tripUpdatesByTripId.get(tripId) || null;
   const nowSec = Math.floor(Date.now() / 1000);
   const midnightSec = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
 
-  // Den FÖRSTA hållplatsen som förekommer i realtidsuppdateringen räknas
-  // som nästa/aktuell hållplats — allt tidigare i den statiska,
-  // ordnade listan räknas som redan passerat. Saknas realtidsdata helt
-  // just nu visas listan ändå (med tabelltider), bara utan markering.
+  // Vilken hållplats fordonet FAKTISKT är närmast just nu — avgörs via
+  // GPS-position mot varje hållplats koordinater. (Att bara anta att
+  // TripUpdates-feedens minsta listade sekvensnummer var "nästa"
+  // hållplats visade sig opålitligt — feeden tappade inte alltid redan
+  // passerade hållplatser ur sin lista, så "nuvarande hållplats" kunde
+  // stå still trots att bussen redan åkt vidare. GPS uppdateras varje
+  // poll (~2s) och är alltid aktuell.)
   let currentSeq = null;
-  if (liveUpdates && liveUpdates.size) {
+  if (followedLatLng) {
+    let bestDist = Infinity;
+    for (const s of staticTrip.stops) {
+      if (s.lat == null || s.lon == null) continue;
+      const d = distanceMeters([followedLatLng.lat, followedLatLng.lng], [s.lat, s.lon]);
+      if (d < bestDist) { bestDist = d; currentSeq = s.seq; }
+    }
+  }
+  // Reservlösning om GPS eller hållplats-koordinater av någon
+  // anledning saknas (t.ex. stop_board.json inte ombyggd med lat/lon
+  // än) — bättre än ingen markering alls.
+  if (currentSeq == null && liveUpdates && liveUpdates.size) {
     for (const u of liveUpdates.values()) {
       if (u.seq != null && (currentSeq === null || u.seq < currentSeq)) currentSeq = u.seq;
     }
@@ -3065,22 +3183,42 @@ function updateStopBoard() {
     const timeText = isPassed ? "" : formatStopBoardEta(etaSeconds);
     return `<div class="${rowClass}"><span class="stop-board-row-time">${timeText}</span><span class="stop-board-row-line"><span class="stop-board-row-dot"></span></span><span class="stop-board-row-name">${s.name}</span></div>`;
   }).join("");
-  stopBoardListEl.innerHTML = rowsHtml;
+  // OBS: att skriva om innerHTML nollställer scrollTop, så spara den
+  // faktiska positionen INNAN vi bygger om — annars ryks en eventuell
+  // manuell scrollning tillbaka vid varje uppdatering (var 2:e sekund).
+  const prevScrollTop = stopBoardListEl.scrollTop;
+  const isFirstRenderForThisTrip = stopBoardShownForTripId !== tripId;
+  stopBoardShownForTripId = tripId;
+
+  // EN enda linje ritas bakom hela raketen av hållplats-prickar (se
+  // .stop-board-timeline-line i CSS) istället för en egen bit per rad
+  // — annars kunde det bli synliga glapp mellan raderna.
+  stopBoardListEl.innerHTML = `<div class="stop-board-rows-wrap"><div class="stop-board-timeline-line"></div>${rowsHtml}</div>`;
   stopBoardListEl.style.setProperty("--stop-board-line-color", tripInfo.color ? `#${tripInfo.color}` : "");
   stopBoardEl.classList.add("visible");
   positionStopBoard();
 
-  // Scrolla mjukt så den aktuella (eller första ej passerade)
-  // hållplatsen hamnar en bit in från toppen av den synliga listan —
-  // INTE centrerad och inte längst upp — så man mest ser hållplatserna
-  // som är KVAR, med bara lite sammanhang bakåt om var bussen redan
-  // varit. scrollIntoView("nearest"/"center") gav antingen för mycket
-  // eller ingen bakåt-kontext, så räknar ut positionen själv istället.
-  const targetRow = stopBoardListEl.querySelector(".stop-board-row-current") || stopBoardListEl.querySelector(".stop-board-row:not(.stop-board-row-passed)");
-  if (targetRow) {
-    const offsetFromTop = stopBoardListEl.clientHeight * 0.22;
-    const targetScrollTop = targetRow.offsetTop - offsetFromTop;
-    stopBoardListEl.scrollTo({ top: Math.max(0, targetScrollTop), behavior: "smooth" });
+  // Placera linjen exakt bakom prick-kolumnen — mäts av verkliga DOM-
+  // positioner (inte gissade CSS-mått), så den alltid hamnar rätt
+  // oavsett teckenstorlek/bredd på tidskolumnen.
+  const rowsWrapEl = stopBoardListEl.querySelector(".stop-board-rows-wrap");
+  const timelineLineEl = stopBoardListEl.querySelector(".stop-board-timeline-line");
+  const firstDotEl = stopBoardListEl.querySelector(".stop-board-row-dot");
+  if (rowsWrapEl && timelineLineEl && firstDotEl) {
+    const wrapRect = rowsWrapEl.getBoundingClientRect();
+    const dotRect = firstDotEl.getBoundingClientRect();
+    timelineLineEl.style.left = (dotRect.left + dotRect.width / 2 - wrapRect.left) + "px";
+  }
+
+  // Scrollning: håll bara "auto-följ"-läget om resan just börjat visas
+  // ELLER man inte redan scrollat bort manuellt — annars återställs
+  // bara den position man redan hade (och pilknappen förblir synlig)
+  // istället för att rycka tillbaka en till den nuvarande hållplatsen.
+  if (isFirstRenderForThisTrip || !stopBoardUserScrolledAway) {
+    scrollStopBoardToCurrent(!isFirstRenderForThisTrip);
+  } else {
+    stopBoardBeginProgrammaticScroll(50);
+    stopBoardListEl.scrollTop = prevScrollTop;
   }
 }
 // Positionerar hållplats-rutan i förhållande till den redan synliga
