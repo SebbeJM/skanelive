@@ -792,15 +792,29 @@ function minDistanceToPointMeters(points, target) {
     };
   }
 
-  // ---- stop_board.json: hållplatslistan (med schemalagda tider) per
-  // resa, för "hållplats-ruta"-funktionen i fordonspopupen (visar var
-  // man är och tid till nästa hållplats, som skärmen ombord på
-  // bussen/tåget). Byggdes MEDVETET bara för linje 166 under betatestet
-  // — nu klart för resten av trafiken, MED UNDANTAG för de simulerade
-  // Öresundstågen (brand === "oresundstag"), eftersom de inte har någon
-  // riktig GTFS-Realtime-position/TripUpdates att visa live-data för
-  // (funktionen ska bara vara aktiv för riktiga, GPS-spårade fordon).
-  const stopBoardTrips = {};
+  const builtAt = new Date().toISOString();
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+  // ---- data/stop_board/<route>.json: hållplatslistan (med schemalagda
+  // tider) per resa, för "hållplats-ruta"-funktionen i fordonspopupen
+  // (visar var man är och tid till nästa hållplats, som skärmen ombord
+  // på bussen/tåget). Byggdes MEDVETET bara för linje 166 under
+  // betatestet, i EN enda fil — nu klart för resten av trafiken, MEN
+  // en enda fil för hela Skåne blev över 130 MB (för stort både för
+  // GitHubs 100 MB-gräns per fil OCH för att låta varje besökare ladda
+  // ner i onödan bara för att öppna sidan). Delas därför upp i EN liten
+  // fil PER LINJE (route_id), som index.html bara hämtar lat när någon
+  // faktiskt trycker "följ" på ett fordon på just den linjen — resten
+  // av besökarna laddar aldrig ner det alls.
+  // Undantag: de simulerade Öresundstågen (brand === "oresundstag")
+  // hoppas över, de har ingen riktig GTFS-Realtime-position/TripUpdates
+  // att visa live-data för (funktionen ska bara vara aktiv för riktiga,
+  // GPS-spårade fordon).
+  function sanitizeRouteIdForFilename(routeId) {
+    return String(routeId).replace(/[^A-Za-z0-9_-]/g, "_");
+  }
+  const stopBoardTripsByRoute = new Map(); // routeId -> { tripId -> {stops:[{stopId,seq,arr,dep}]} }
+  const stopBoardStopsByRoute = new Map(); // routeId -> { stopId -> {name,lat,lon} }
   let stopBoardTripCount = 0;
   for (const [tripId, routeId] of routeIdByTripId) {
     const info = routesById.get(routeId);
@@ -810,30 +824,59 @@ function minDistanceToPointMeters(points, target) {
     if (!rawStops || rawStops.length < 2) continue;
     const sorted = [...rawStops].sort((a, b) => a.seq - b.seq);
     const stops = [];
+    let stopsMeta = stopBoardStopsByRoute.get(routeId);
+    if (!stopsMeta) {
+      stopsMeta = {};
+      stopBoardStopsByRoute.set(routeId, stopsMeta);
+    }
     for (const { seq, stopId, arr, dep } of sorted) {
       const s = stopsById.get(stopId);
       if (!s || !s.name) continue;
+      // Namn/lat/lon delas i en liten gemensam lista PER LINJE istället
+      // för att upprepas i varje enskild resa — samma hållplats besöks
+      // ofta av dussintals resor per dag på samma linje.
       // lat/lon behövs för att kunna avgöra vilken hållplats fordonet
       // FAKTISKT är närmast just nu (GPS-baserat) — TripUpdates-feeden
       // visade sig inte alltid tappa redan passerade hållplatser ur sin
       // lista, vilket gjorde att "nuvarande hållplats" kunde stå still.
-      stops.push({ stopId, name: s.name, seq, arr, dep, lat: s.lat, lon: s.lon });
+      if (!stopsMeta[stopId]) stopsMeta[stopId] = { name: s.name, lat: s.lat, lon: s.lon };
+      stops.push({ stopId, seq, arr, dep });
     }
     if (stops.length < 2) continue;
-    stopBoardTrips[tripId] = { routeId, line: info.shortName, color: info.color, stops };
+    let tripsForRoute = stopBoardTripsByRoute.get(routeId);
+    if (!tripsForRoute) {
+      tripsForRoute = {};
+      stopBoardTripsByRoute.set(routeId, tripsForRoute);
+    }
+    tripsForRoute[tripId] = { line: info.shortName, color: info.color, stops };
     stopBoardTripCount++;
   }
-  console.log(`stop_board.json: ${stopBoardTripCount} resor med hållplatslista byggda (alla linjer utom simulerade Öresundståg)`);
+  const STOP_BOARD_OUTPUT_DIR = path.join(OUTPUT_DIR, "stop_board");
+  fs.mkdirSync(STOP_BOARD_OUTPUT_DIR, { recursive: true });
+  // Rensa bort ev. gamla per-linje-filer från förra körningen (t.ex. om
+  // en linje lagts ner eller fått nytt route_id sen sist) så vi inte
+  // samlar på oss föräldralösa filer i mappen för alltid.
+  for (const oldFile of fs.readdirSync(STOP_BOARD_OUTPUT_DIR)) {
+    fs.unlinkSync(path.join(STOP_BOARD_OUTPUT_DIR, oldFile));
+  }
+  let stopBoardFileCount = 0;
+  for (const [routeId, tripsForRoute] of stopBoardTripsByRoute) {
+    const stopsMeta = stopBoardStopsByRoute.get(routeId) || {};
+    const fileName = `${sanitizeRouteIdForFilename(routeId)}.json`;
+    fs.writeFileSync(
+      path.join(STOP_BOARD_OUTPUT_DIR, fileName),
+      JSON.stringify({ builtAt, routeId, stops: stopsMeta, trips: tripsForRoute })
+    );
+    stopBoardFileCount++;
+  }
+  console.log(`stop_board/: ${stopBoardFileCount} linjefiler byggda, ${stopBoardTripCount} resor totalt (alla linjer utom simulerade Öresundståg)`);
 
-  const builtAt = new Date().toISOString();
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUTPUT_DIR, "trip_lookup.json"), JSON.stringify({ builtAt, trips: tripLookup }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "rail_lines.json"), JSON.stringify({ builtAt, lines: railLines }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "train_stations.json"), JSON.stringify({ builtAt, stations: trainStations }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "bus_stops.json"), JSON.stringify({ builtAt, stops: busStops }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "route_shapes.json"), JSON.stringify({ builtAt, routes: routeShapes }));
   fs.writeFileSync(path.join(OUTPUT_DIR, "oresundstag_schedule.json"), JSON.stringify({ builtAt, trips: oresundstagSchedule, shapes: oresundstagShapesById }));
-  fs.writeFileSync(path.join(OUTPUT_DIR, "stop_board.json"), JSON.stringify({ builtAt, trips: stopBoardTrips }));
 
   return {
     tripCount: Object.keys(tripLookup).length,
