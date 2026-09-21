@@ -1248,9 +1248,8 @@ const BUS_STOPS_URL = "data/bus_stops.json";
 const ROUTE_SHAPES_URL = "data/route_shapes.json";
 const ORESUNDSTAG_SCHEDULE_URL = "data/oresundstag_schedule.json";
 // Hållplatslistan (schemalagda tider) per resa, för hållplats-rutan i
-// fordonspopupen — byggs för all riktig trafik (se build-gtfs.js),
-// utom de simulerade Öresundstågen.
-const STOP_BOARD_URL = "data/stop_board.json";
+// fordonspopupen, hämtas numera per linje — se STOP_BOARD_DIR_URL och
+// ensureStopBoardDataForRoute() längre ner.
 const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
 const POLL_INTERVAL_MS = 2000; // 2 sekunder — Silver-nyckel godkänd
 // TripUpdates (förseningar/ETA per hållplats) ändras inte lika snabbt
@@ -2266,10 +2265,51 @@ let oresundstagShapesById = {};
 // riktig trafik — undantaget är de simulerade Öresundstågen (de har
 // ingen riktig GTFS-Realtime-position/TripUpdates att visa live-data
 // för), vilka filtreras bort via STOP_BOARD_EXCLUDED_BRANDS nedan.
+//
+// Datat för hela Skånes trafik i EN fil blev över 130 MB (för stort
+// för GitHub OCH för att tvinga varje besökare att ladda ner i onödan
+// bara för att öppna sidan). Byggs därför numera som EN liten fil PER
+// LINJE (data/stop_board/<route_id>.json) och hämtas HÄR, lat, bara
+// när man faktiskt trycker "följ" på ett fordon — cachas sen i minnet
+// (stopBoardRouteCache) så samma linje inte hämtas om och om igen.
 // ============================================================
-let stopBoardTripsData = {}; // tripId -> { routeId, line, color, stops:[{stopId,name,seq,arr,dep}] }
+const STOP_BOARD_DIR_URL = "data/stop_board/";
+// routeId -> "loading" | "missing" | { stops:{stopId->{name,lat,lon}}, trips:{tripId->{...}} }
+let stopBoardRouteCache = new Map();
 let tripUpdatesByTripId = new Map(); // tripId -> Map(stopId -> {seq, delay, time})
 const STOP_BOARD_EXCLUDED_BRANDS = new Set(["oresundstag"]);
+
+function sanitizeRouteIdForFilename(routeId) {
+  return String(routeId).replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
+// Hämtar (lat) hållplatslistan för en hel linje, en gång, och sparar i
+// minnescachen. Icke-kritiskt — om filen saknas eller hämtningen
+// misslyckas ska resten av sidan fungera precis som vanligt, bara utan
+// hållplats-ruta för just den linjen.
+async function ensureStopBoardDataForRoute(routeId) {
+  if (!routeId || stopBoardRouteCache.has(routeId)) return;
+  stopBoardRouteCache.set(routeId, "loading");
+  try {
+    const url = `${STOP_BOARD_DIR_URL}${sanitizeRouteIdForFilename(routeId)}.json`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      stopBoardRouteCache.set(routeId, "missing");
+      return;
+    }
+    const data = await res.json();
+    stopBoardRouteCache.set(routeId, { stops: data.stops || {}, trips: data.trips || {} });
+  } catch (err) {
+    console.warn(`Kunde inte ladda hållplatslista för linje (route ${routeId}):`, err);
+    stopBoardRouteCache.set(routeId, "missing");
+  }
+  // Datat kan ha kommit in EFTER att vi redan hann visa (eller dölja)
+  // rutan för den nu följda resan — rita om direkt om det fortfarande
+  // är samma resa/linje som följs, så man slipper vänta på nästa poll.
+  if (followedTripInfo && followedTripInfo.routeId === routeId) {
+    updateStopBoard();
+  }
+}
 const simulatedOresundstagLayer = L.layerGroup().addTo(map);
 // En "låtsas"-tripInfo som återanvänder exakt samma ikonstil som
 // riktiga Öresundståg-fordon (samma färg, samma rälsutseende).
@@ -2936,18 +2976,11 @@ async function loadRouteColors() {
     console.warn("Kunde inte ladda Öresundståg-tidtabellen (finns filen ännu inte?):", err);
   }
 
-  // Hållplatslistan för hållplats-rutan (testfas, bara ett fåtal linjer
-  // just nu) — samma icke-kritiska mönster som ovan: saknas filen (t.ex.
-  // innan nightly-jobbet körts om) ska resten av sidan fungera som vanligt.
-  try {
-    const stopBoardRes = await fetch(STOP_BOARD_URL, { cache: "no-store" });
-    if (!stopBoardRes.ok) throw new Error(`stop_board.json: HTTP ${stopBoardRes.status}`);
-    const stopBoardData = await stopBoardRes.json();
-    stopBoardTripsData = stopBoardData.trips || {};
-    console.log(`Laddade hållplatslistor (hållplats-rutan, testfas) för ${Object.keys(stopBoardTripsData).length} resor`);
-  } catch (err) {
-    console.warn("Kunde inte ladda stop_board.json (finns filen ännu inte, eller inte byggd/committad än?):", err);
-  }
+  // Hållplatslistan för hållplats-rutan hämtas INTE här längre — den är
+  // numera uppdelad i en fil per linje och hämtas lat (se
+  // ensureStopBoardDataForRoute) bara när man faktiskt följer ett
+  // fordon, så sidan inte behöver ladda ner data för hela nätet i
+  // onödan bara för att öppna sidan.
 }
 async function fetchVehiclePositions() {
   const res = await fetch(PROXY_URL, { cache: "no-store" });
@@ -3141,7 +3174,28 @@ function updateStopBoard() {
     stopBoardJumpBtn.classList.remove("visible");
     return;
   }
-  const staticTrip = stopBoardTripsData[tripId];
+  // Hållplatsdatat hämtas per LINJE (route), lat, cachat i minnet — se
+  // ensureStopBoardDataForRoute() ovan. Så länge det inte redan finns
+  // (eller håller på att hämtas) för den här linjen döljs rutan bara,
+  // och ritas om automatiskt av den funktionen så fort datat är klart.
+  const routeId = tripInfo.routeId;
+  const routeEntry = routeId ? stopBoardRouteCache.get(routeId) : undefined;
+  if (!routeEntry || routeEntry === "loading") {
+    if (routeId) ensureStopBoardDataForRoute(routeId);
+    stopBoardEl.classList.remove("visible");
+    stopBoardShownForTripId = null;
+    stopBoardUserScrolledAway = false;
+    stopBoardJumpBtn.classList.remove("visible");
+    return;
+  }
+  if (routeEntry === "missing") {
+    stopBoardEl.classList.remove("visible");
+    stopBoardShownForTripId = null;
+    stopBoardUserScrolledAway = false;
+    stopBoardJumpBtn.classList.remove("visible");
+    return;
+  }
+  const staticTrip = routeEntry.trips[tripId];
   if (!staticTrip || !staticTrip.stops || staticTrip.stops.length < 2) {
     stopBoardEl.classList.remove("visible");
     stopBoardShownForTripId = null;
@@ -3149,6 +3203,7 @@ function updateStopBoard() {
     stopBoardJumpBtn.classList.remove("visible");
     return;
   }
+  const stopsMeta = routeEntry.stops || {};
   const liveUpdates = tripUpdatesByTripId.get(tripId) || null;
   const nowSec = Math.floor(Date.now() / 1000);
   const midnightSec = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
@@ -3164,13 +3219,14 @@ function updateStopBoard() {
   if (followedLatLng) {
     let bestDist = Infinity;
     for (const s of staticTrip.stops) {
-      if (s.lat == null || s.lon == null) continue;
-      const d = distanceMeters([followedLatLng.lat, followedLatLng.lng], [s.lat, s.lon]);
+      const meta = stopsMeta[s.stopId];
+      if (!meta || meta.lat == null || meta.lon == null) continue;
+      const d = distanceMeters([followedLatLng.lat, followedLatLng.lng], [meta.lat, meta.lon]);
       if (d < bestDist) { bestDist = d; currentSeq = s.seq; }
     }
   }
   // Reservlösning om GPS eller hållplats-koordinater av någon
-  // anledning saknas (t.ex. stop_board.json inte ombyggd med lat/lon
+  // anledning saknas (t.ex. stop_board-filen inte ombyggd med lat/lon
   // än) — bättre än ingen markering alls.
   if (currentSeq == null && liveUpdates && liveUpdates.size) {
     for (const u of liveUpdates.values()) {
@@ -3209,7 +3265,8 @@ function updateStopBoard() {
     }
     const rowClass = "stop-board-row" + (isPassed ? " stop-board-row-passed" : "") + (isCurrent ? " stop-board-row-current" : "");
     const timeText = isPassed ? "" : formatStopBoardEta(etaSeconds);
-    return `<div class="${rowClass}"><span class="stop-board-row-time">${timeText}</span><span class="stop-board-row-line"><span class="stop-board-row-dot"></span></span><span class="stop-board-row-name">${s.name}</span></div>`;
+    const stopName = (stopsMeta[s.stopId] && stopsMeta[s.stopId].name) || "";
+    return `<div class="${rowClass}"><span class="stop-board-row-time">${timeText}</span><span class="stop-board-row-line"><span class="stop-board-row-dot"></span></span><span class="stop-board-row-name">${stopName}</span></div>`;
   }).join("");
   // OBS: att skriva om innerHTML nollställer scrollTop, så spara den
   // faktiska positionen INNAN vi bygger om — annars ryks en eventuell
