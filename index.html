@@ -901,22 +901,27 @@
     color: var(--fg);
   }
   /* Kolumnen som håller hållplats-pricken — själva linjen ritas INTE
-     här längre (se .stop-board-timeline-line ovan), bara pricken. */
+     här längre (se .stop-board-timeline-line ovan), bara pricken.
+     FAST bredd (liksom tidskolumnen) så prickens mittpunkt garanterat
+     hamnar på exakt samma vågräta plats som linjen, oavsett prickens
+     egen storlek — pricken är absolutpositionerad i mitten av just
+     den här kolumnen (se .stop-board-row-dot), och linjen mäts fram
+     mot samma kolumns mittpunkt i JS (updateStopBoard). */
   .stop-board-row-line {
     position: relative;
     z-index: 1;
     flex-shrink: 0;
-    width: 16px;
+    width: 20px;
     align-self: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
   .stop-board-row-dot {
-    position: relative;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     z-index: 1;
-    width: 10px;
-    height: 10px;
+    width: 13px;
+    height: 13px;
     border-radius: 50%;
     background: #ffffff;
     border: 3px solid var(--stop-board-line-color, var(--accent));
@@ -926,8 +931,9 @@
      färg istället för vit med kantlinje, så den syns tydligt var
      bussen har stannat. */
   .stop-board-row-current .stop-board-row-dot {
-    width: 13px;
-    height: 13px;
+    width: 17px;
+    height: 17px;
+    border-width: 4px;
     background: var(--stop-board-line-color, var(--accent));
   }
   .stop-board-row-name {
@@ -3213,12 +3219,14 @@ function updateStopBoard() {
   stopBoardEl.classList.add("visible");
   positionStopBoard();
 
-  // Placera linjen exakt bakom prick-kolumnen — mäts av verkliga DOM-
-  // positioner (inte gissade CSS-mått), så den alltid hamnar rätt
-  // oavsett teckenstorlek/bredd på tidskolumnen.
+  // Placera linjen exakt i mitten av prick-KOLUMNEN (inte pricken
+  // själv) — kolumnen har fast bredd på varje rad medan pricken kan
+  // variera i storlek (aktuell hållplats är större), så att mäta mot
+  // kolumnen garanterar att linjen alltid hamnar exakt centrerad bakom
+  // varje prick oavsett dess storlek.
   const rowsWrapEl = stopBoardListEl.querySelector(".stop-board-rows-wrap");
   const timelineLineEl = stopBoardListEl.querySelector(".stop-board-timeline-line");
-  const firstDotEl = stopBoardListEl.querySelector(".stop-board-row-dot");
+  const firstDotEl = stopBoardListEl.querySelector(".stop-board-row-line");
   if (rowsWrapEl && timelineLineEl && firstDotEl) {
     const wrapRect = rowsWrapEl.getBoundingClientRect();
     const dotRect = firstDotEl.getBoundingClientRect();
