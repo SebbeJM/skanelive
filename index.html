@@ -119,7 +119,7 @@
     gap: 0.9rem;
     flex-shrink: 0;
   }
-  #contact-btn, #skanetrafiken-link-btn {
+  #contact-btn, #skanetrafiken-link-btn, #media-btn {
     flex-shrink: 0;
     padding: 0.4rem 0.9rem;
     border: 1px solid var(--line);
@@ -128,8 +128,11 @@
     text-decoration: none;
     font-size: 0.8rem;
     white-space: nowrap;
+    background: none;
+    font-family: inherit;
+    cursor: pointer;
   }
-  #contact-btn:hover, #skanetrafiken-link-btn:hover {
+  #contact-btn:hover, #skanetrafiken-link-btn:hover, #media-btn:hover {
     border-color: var(--muted);
   }
   #menu-btn {
@@ -546,7 +549,7 @@
     border-radius: 50%;
     box-shadow: 0 0 0 2px rgba(59,130,246,0.4);
   }
-  #search-panel, #filter-panel {
+  #search-panel, #filter-panel, #media-panel {
     display: none;
     position: absolute;
     top: 100%;
@@ -561,8 +564,25 @@
     max-width: 85vw;
     box-shadow: 0 6px 24px rgba(0,0,0,0.55);
   }
-  #search-panel.open, #filter-panel.open {
+  #search-panel.open, #filter-panel.open, #media-panel.open {
     display: block;
+  }
+  .media-panel-title {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+  }
+  #media-panel a {
+    display: block;
+    color: var(--fg);
+    text-decoration: none;
+    padding: 0.5rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  #media-panel a:hover {
+    background: var(--bg);
   }
   #filter-panel label {
     display: flex;
@@ -740,6 +760,90 @@
     border-color: var(--accent);
     color: var(--accent);
   }
+  /* Hållplats-rutan — visar hållplatserna för den följda resan, som
+     skylten ombord på fordonet. Testfas: bara aktiv för linje 166.
+     Egen, separat ruta (positioneras av JS — positionStopBoard() —
+     till höger om följ-rutan på desktop, se längre ner). */
+  #stop-board {
+    display: none;
+    position: absolute;
+    z-index: 1095;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.65rem 0.8rem;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.55);
+    width: 260px;
+    max-width: 40vw;
+  }
+  #stop-board.visible {
+    display: block;
+  }
+  #stop-board-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  #stop-board-minimize-btn {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--fg);
+    font-size: 0.95rem;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  #stop-board-minimize-btn:hover {
+    border-color: var(--accent);
+  }
+  #stop-board.minimized #stop-board-list {
+    display: none;
+  }
+  #stop-board-list {
+    max-height: 200px;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+  .stop-board-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.3rem 0.1rem 0.3rem 0.55rem;
+    border-left: 3px solid var(--stop-board-line-color, var(--accent));
+    font-size: 0.8rem;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+  }
+  .stop-board-row.stop-board-row-passed {
+    opacity: 0.3;
+  }
+  .stop-board-row.stop-board-row-current {
+    opacity: 1;
+    font-weight: 700;
+  }
+  .stop-board-row-time {
+    flex-shrink: 0;
+    min-width: 2.6em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .stop-board-row-current .stop-board-row-time {
+    color: var(--fg);
+  }
+  .stop-board-row-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   #config-banner {
     position: absolute;
     z-index: 1000;
@@ -861,6 +965,22 @@
       padding: 0.35rem 0.55rem;
       font-size: 0.72rem;
     }
+    /* På mobilen ligger följ-rutan fast i botten av skärmen (se
+       #follow-hud ovan) — hållplats-rutan positioneras av JS
+       (positionStopBoard()) som en egen full-bredd-remsa direkt OVANFÖR
+       den, så det ser ut som en sammanhängande botten-panel. Bredden/
+       positionen (left/right/bottom) sätts av JS; här bara utseendet. */
+    #stop-board {
+      width: 100%;
+      max-width: 100%;
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.45);
+    }
+    #stop-board-list {
+      max-height: 26vh;
+    }
     header {
       flex-wrap: wrap;
       row-gap: 0.5rem;
@@ -877,7 +997,7 @@
       justify-content: flex-start;
       overflow-x: auto;
     }
-    #contact-btn, #filter-btn, #skanetrafiken-link-btn {
+    #contact-btn, #filter-btn, #skanetrafiken-link-btn, #media-btn {
       display: none;
     }
     #menu-btn {
@@ -931,6 +1051,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="1" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="23"></line><line x1="1" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="23" y2="12"></line></svg>
       </button>
       <a href="https://www.skanetrafiken.se/" target="_blank" rel="noopener" id="skanetrafiken-link-btn">Reseplaneraren</a>
+      <button id="media-btn" aria-label="Media">Media</button>
       <a href="contact.html" id="contact-btn">Kontakt</a>
       <div id="status"><span class="dot"></span>ansluter…</div>
       <button id="menu-btn" aria-label="Meny" aria-expanded="false">
@@ -942,6 +1063,8 @@
       <a href="https://www.skanetrafiken.se/" target="_blank" rel="noopener">Reseplaneraren</a>
       <a href="contact.html">Kontakt</a>
       <a href="contact.html#donate">Donera</a>
+      <a href="https://www.nyteknik.se/tech/skanekodare-byggde-livekarta-foer-buss-och-tag-perfekt-foer-kontrollfreaks/4494237" target="_blank" rel="noopener">Media: Ny Teknik</a>
+      <a href="https://feber.se/internet/ny-sajt-visar-all-kollektivtrafik-i-skane-i-realtid/496077/" target="_blank" rel="noopener">Media: Feber</a>
     </div>
     <div id="filter-panel">
       <label><input type="checkbox" id="show-rail-lines-checkbox" checked> Dölj linjer</label>
@@ -952,6 +1075,11 @@
           <span class="theme-toggle-track"><span class="theme-toggle-thumb"></span></span>
         </label>
       </div>
+    </div>
+    <div id="media-panel">
+      <div class="media-panel-title">Skåne Live i media</div>
+      <a href="https://www.nyteknik.se/tech/skanekodare-byggde-livekarta-foer-buss-och-tag-perfekt-foer-kontrollfreaks/4494237" target="_blank" rel="noopener">Ny Teknik</a>
+      <a href="https://feber.se/internet/ny-sajt-visar-all-kollektivtrafik-i-skane-i-realtid/496077/" target="_blank" rel="noopener">Feber</a>
     </div>
     <div id="search-panel">
       <input id="search-input" type="text" placeholder="Linjenummer, t.ex. 5" autocomplete="off">
@@ -968,6 +1096,13 @@
           <button id="follow-hud-close">Sluta följa</button>
         </div>
       </div>
+    </div>
+    <div id="stop-board">
+      <div id="stop-board-header">
+        <span>Hållplatser</span>
+        <button id="stop-board-minimize-btn" aria-label="Minimera hållplatslistan">−</button>
+      </div>
+      <div id="stop-board-list"></div>
     </div>
     <div id="line-hud">
       <div class="follow-hud-inner">
@@ -1001,8 +1136,16 @@ const TRAIN_STATIONS_URL = "data/train_stations.json";
 const BUS_STOPS_URL = "data/bus_stops.json";
 const ROUTE_SHAPES_URL = "data/route_shapes.json";
 const ORESUNDSTAG_SCHEDULE_URL = "data/oresundstag_schedule.json";
+// Hållplatslistan (schemalagda tider) per resa, för hållplats-rutan i
+// fordonspopupen — byggs just nu bara för ett litet urval linjer
+// (testfas), se STOP_BOARD_ROUTE_SHORT_NAMES i build-gtfs.js.
+const STOP_BOARD_URL = "data/stop_board.json";
 const CARTO_API_KEY = "cb1_2xg9_1_343477973a1876e2e80c6005";
 const POLL_INTERVAL_MS = 2000; // 2 sekunder — Silver-nyckel godkänd
+// TripUpdates (förseningar/ETA per hållplats) ändras inte lika snabbt
+// som positionerna — och workern cachar den i 10s — så ingen anledning
+// att hämta den oftare än så.
+const TRIP_UPDATES_POLL_INTERVAL_MS = 10000;
 const MAP_CENTER = [55.605, 12.9998];
 const MAP_ZOOM = 10.5;
 const GTFS_RT_PROTO = `
@@ -1018,12 +1161,15 @@ message FeedHeader {
 }
 message FeedEntity {
   required string id = 1;
+  optional TripUpdate trip_update = 3;
   optional VehiclePosition vehicle = 4;
 }
 message VehiclePosition {
   optional TripDescriptor trip = 1;
   optional VehicleDescriptor vehicle = 8;
   optional Position position = 2;
+  optional uint32 current_stop_sequence = 3;
+  optional string stop_id = 4;
   optional uint64 timestamp = 5;
 }
 message TripDescriptor {
@@ -1039,6 +1185,24 @@ message Position {
   required float longitude = 2;
   optional float bearing = 3;
   optional float speed = 5;
+}
+// Nedanstående (TripUpdate m.fl.) används ENDAST för den separata
+// TripUpdates-feeden (förseningar/hållplats-ETA per resa), inte för
+// fordonspositionerna ovan — men allt delar samma FeedMessage/
+// FeedEntity-skal, så det räcker med en enda protobuf-typ för båda.
+message TripUpdate {
+  optional TripDescriptor trip = 1;
+  repeated StopTimeUpdate stop_time_update = 2;
+}
+message StopTimeUpdate {
+  optional uint32 stop_sequence = 1;
+  optional StopTimeEvent arrival = 2;
+  optional StopTimeEvent departure = 3;
+  optional string stop_id = 4;
+}
+message StopTimeEvent {
+  optional int32 delay = 1;
+  optional int64 time = 2;
 }
 `;
 const mapContainer = document.getElementById("map");
@@ -1081,6 +1245,24 @@ mobileFilterBtn.addEventListener("click", (e) => {
 document.addEventListener("click", (e) => {
   if (!filterPanel.contains(e.target) && e.target !== filterBtn && e.target !== mobileFilterBtn) {
     filterPanel.classList.remove("open");
+  }
+});
+
+// ============================================================
+// Media — knapp i headern som visar länkar till artiklar sidan
+// varit med i. På mobilen ligger länkarna istället direkt i
+// hamburgarmenyn (se #mobile-menu i HTML).
+// ============================================================
+const mediaBtn = document.getElementById("media-btn");
+const mediaPanel = document.getElementById("media-panel");
+function toggleMediaPanel(e) {
+  e.stopPropagation();
+  mediaPanel.classList.toggle("open");
+}
+mediaBtn.addEventListener("click", toggleMediaPanel);
+document.addEventListener("click", (e) => {
+  if (!mediaPanel.contains(e.target) && e.target !== mediaBtn) {
+    mediaPanel.classList.remove("open");
   }
 });
 showRailLinesCheckbox.addEventListener("change", () => {
@@ -1359,6 +1541,10 @@ let followedId = null;
 // Håller koll på den följda resans linjeinfo, oberoende av om fordonet
 // just nu har en egen markör — används av "Se linje"-knappen.
 let followedTripInfo = null;
+// Den faktiska GTFS trip_id:n för den följda resan — behövs för att
+// slå upp hållplatslistan (stop_board.json) och realtidsförseningarna
+// (TripUpdates) för just DEN HÄR resan, till "hållplats-rutan".
+let followedTripId = null;
 const FOLLOW_ZOOM = 16;
 const followHud = document.getElementById("follow-hud");
 const followHudText = document.getElementById("follow-hud-text");
@@ -1526,7 +1712,7 @@ function beginProgrammaticCameraMove(durationMs) {
 window.startFollow = function(id) {
   const entry = markers.get(id);
   if (entry) {
-    beginFollowSession(id, entry.marker.getLatLng(), { tripInfo: entry.tripInfo, lastSpeed: entry.lastSpeed });
+    beginFollowSession(id, entry.marker.getLatLng(), { tripInfo: entry.tripInfo, tripId: entry.tripId, lastSpeed: entry.lastSpeed });
     return;
   }
   // Fordonet syns inte just nu (t.ex. utanför synfältet eller hittat via
@@ -1545,6 +1731,7 @@ window.startFollow = function(id) {
   const tripInfo = tripInfoByTripId.get(tripId);
   beginFollowSession(id, L.latLng(vp.position.latitude, vp.position.longitude), {
     tripInfo,
+    tripId,
     lastSpeed: vp.position.speed,
   });
 };
@@ -1572,8 +1759,12 @@ function beginFollowSession(id, latlng, hudData) {
   // egen motsvarande knapp för samma sak.
   lineHud.classList.remove("visible");
   followedId = id;
-  updateFollowHud(hudData);
+  // VIKTIGT: "visible" måste sättas INNAN updateFollowHud() (som i sin
+  // tur anropar updateStopBoard()) — annars mäts följ-rutans bredd/höjd
+  // medan den fortfarande är display:none (0×0), och hållplats-rutan
+  // hamnar fel i det allra första ögonblicket.
   followHud.classList.add("visible");
+  updateFollowHud(hudData);
   beginProgrammaticCameraMove(900);
   map.flyTo(getFollowTargetLatLng(latlng, FOLLOW_ZOOM), FOLLOW_ZOOM, {
     duration: 0.9,
@@ -1614,14 +1805,17 @@ function stopFollow() {
     hideLine();
   }
   followedTripInfo = null;
+  followedTripId = null;
   followHud.classList.remove("visible");
   followHudText.innerHTML = "";
+  stopBoardEl.classList.remove("visible");
 }
 
 function updateFollowHud(entry) {
   if (!entry) return;
   const tripInfo = entry.tripInfo;
   followedTripInfo = tripInfo || null;
+  followedTripId = entry.tripId || null;
   const displayName = (tripInfo && tripInfo.line) || "okänd";
   const destination = (tripInfo && tripInfo.destination) || "";
   const speedText = entry.lastSpeed != null
@@ -1635,6 +1829,7 @@ function updateFollowHud(entry) {
   `;
   // "Se linje" är bara relevant för bussar — tåg följer redan sina
   // egna, fasta spår som alltid syns på kartan.
+  updateStopBoard();
 }
 
 // Bara riktig dragning (panorering) och klick avbryter följningen.
@@ -1938,6 +2133,15 @@ map.on("zoomend", scheduleRenderVisibleBusStops);
 // ============================================================
 let oresundstagSchedule = [];
 let oresundstagShapesById = {};
+
+// ============================================================
+// Hållplats-rutan — visar hållplatserna för den följda resan (som
+// skylten ombord på fordonet), med minuter till nästa. Testfas: bara
+// aktiv för linjer i STOP_BOARD_ENABLED_LINES nedan.
+// ============================================================
+let stopBoardTripsData = {}; // tripId -> { routeId, line, color, stops:[{stopId,name,seq,arr,dep}] }
+let tripUpdatesByTripId = new Map(); // tripId -> Map(stopId -> {seq, delay, time})
+const STOP_BOARD_ENABLED_LINES = new Set(["166"]);
 const simulatedOresundstagLayer = L.layerGroup().addTo(map);
 // En "låtsas"-tripInfo som återanvänder exakt samma ikonstil som
 // riktiga Öresundståg-fordon (samma färg, samma rälsutseende).
@@ -2450,6 +2654,7 @@ function updateVehicles(entities) {
         entry.iconKey = iconKey;
       }
       entry.tripInfo = tripInfo;
+      entry.tripId = tripId;
       entry.missedPolls = 0;
       entry.moving = isMoving;
       entry.lastSpeed = speed;
@@ -2486,7 +2691,7 @@ function updateVehicles(entities) {
       const popup = L.popup({ offset: [0, -14], closeButton: false, autoClose: false, closeOnClick: false, autoPan: false })
         .setContent(popupHtml);
       const newEntry = {
-        marker, popup, iconKey, tripInfo, moving: isMoving,
+        marker, popup, iconKey, tripInfo, tripId, moving: isMoving,
         lastUpdateTime: Date.now(), pinned: false, popupBaseHtml: popupHtml,
         id: id, lastSpeed: speed
       };
@@ -2602,6 +2807,19 @@ async function loadRouteColors() {
   } catch (err) {
     console.warn("Kunde inte ladda Öresundståg-tidtabellen (finns filen ännu inte?):", err);
   }
+
+  // Hållplatslistan för hållplats-rutan (testfas, bara ett fåtal linjer
+  // just nu) — samma icke-kritiska mönster som ovan: saknas filen (t.ex.
+  // innan nightly-jobbet körts om) ska resten av sidan fungera som vanligt.
+  try {
+    const stopBoardRes = await fetch(STOP_BOARD_URL, { cache: "no-store" });
+    if (!stopBoardRes.ok) throw new Error(`stop_board.json: HTTP ${stopBoardRes.status}`);
+    const stopBoardData = await stopBoardRes.json();
+    stopBoardTripsData = stopBoardData.trips || {};
+    console.log(`Laddade hållplatslistor (hållplats-rutan, testfas) för ${Object.keys(stopBoardTripsData).length} resor`);
+  } catch (err) {
+    console.warn("Kunde inte ladda stop_board.json (finns filen ännu inte, eller inte byggd/committad än?):", err);
+  }
 }
 async function fetchVehiclePositions() {
   const res = await fetch(PROXY_URL, { cache: "no-store" });
@@ -2638,6 +2856,165 @@ async function pollLoop() {
     setTimeout(pollLoop, POLL_INTERVAL_MS);
   }
 }
+
+// ============================================================
+// TripUpdates — förseningar/ETA per hållplats, för hållplats-rutan.
+// Egen, separat poll-loop (längre intervall än fordonspositionerna,
+// matchar workerns cache) som ALDRIG ska kunna störa huvudkartan om
+// den skulle strula — allt är inneslutet i sitt eget try/catch.
+// ============================================================
+async function fetchTripUpdates() {
+  const res = await fetch(`${PROXY_URL}/tripupdates`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const buffer = new Uint8Array(await res.arrayBuffer());
+  const message = FeedMessageType.decode(buffer);
+  // longs: Number — annars kommer int64-fältet "time" tillbaka som ett
+  // Long-objekt istället för ett vanligt tal, vilket skulle krascha all
+  // efterföljande tidsaritmetik. Säkert här (sekunder sedan 1970 ryms
+  // gott inom Number.MAX_SAFE_INTEGER).
+  const obj = FeedMessageType.toObject(message, { defaults: true, longs: Number });
+  return obj.entity || [];
+}
+function buildTripUpdatesIndex(entities) {
+  const index = new Map();
+  for (const e of entities) {
+    const tu = e.tripUpdate;
+    if (!tu || !tu.trip || !tu.trip.tripId) continue;
+    const stopMap = new Map();
+    for (const stu of (tu.stopTimeUpdate || [])) {
+      if (!stu.stopId) continue;
+      const ev = stu.arrival || stu.departure;
+      stopMap.set(stu.stopId, {
+        seq: stu.stopSequence != null ? stu.stopSequence : null,
+        delay: ev && ev.delay != null ? ev.delay : null,
+        time: ev && ev.time != null ? ev.time : null,
+      });
+    }
+    index.set(tu.trip.tripId, stopMap);
+  }
+  return index;
+}
+async function tripUpdatesPollLoop() {
+  try {
+    const entities = await fetchTripUpdates();
+    tripUpdatesByTripId = buildTripUpdatesIndex(entities);
+    if (followedId) updateStopBoard();
+  } catch (err) {
+    // Medvetet bara en varning, ingen setStatus("error", ...) — det här
+    // är en extra funktion ovanpå huvudkartan, som alltid ska fungera
+    // som vanligt även om just förseningsfeeden skulle strula.
+    console.warn("Kunde inte hämta TripUpdates (förseningsdata):", err);
+  } finally {
+    setTimeout(tripUpdatesPollLoop, TRIP_UPDATES_POLL_INTERVAL_MS);
+  }
+}
+
+// ============================================================
+// Hållplats-rutan — själva uppritningen. Slår ihop den statiska
+// hållplatslistan (stop_board.json, schemalagda tider) med
+// realtidsförseningarna (TripUpdates) för just den följda resan.
+// ============================================================
+const stopBoardEl = document.getElementById("stop-board");
+const stopBoardListEl = document.getElementById("stop-board-list");
+const stopBoardMinimizeBtn = document.getElementById("stop-board-minimize-btn");
+let stopBoardMinimized = false;
+stopBoardMinimizeBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  stopBoardMinimized = !stopBoardMinimized;
+  stopBoardEl.classList.toggle("minimized", stopBoardMinimized);
+  stopBoardMinimizeBtn.textContent = stopBoardMinimized ? "+" : "−";
+});
+function formatStopBoardEta(etaSeconds) {
+  if (etaSeconds == null) return "";
+  const mins = Math.round(etaSeconds / 60);
+  if (mins <= 0) return "Nu";
+  return `${mins} min`;
+}
+function updateStopBoard() {
+  const tripInfo = followedTripInfo;
+  const tripId = followedTripId;
+  if (!tripId || !tripInfo || !STOP_BOARD_ENABLED_LINES.has(tripInfo.line)) {
+    stopBoardEl.classList.remove("visible");
+    return;
+  }
+  const staticTrip = stopBoardTripsData[tripId];
+  if (!staticTrip || !staticTrip.stops || staticTrip.stops.length < 2) {
+    stopBoardEl.classList.remove("visible");
+    return;
+  }
+  const liveUpdates = tripUpdatesByTripId.get(tripId) || null;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const midnightSec = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+
+  // Den FÖRSTA hållplatsen som förekommer i realtidsuppdateringen räknas
+  // som nästa/aktuell hållplats — allt tidigare i den statiska,
+  // ordnade listan räknas som redan passerat. Saknas realtidsdata helt
+  // just nu visas listan ändå (med tabelltider), bara utan markering.
+  let currentSeq = null;
+  if (liveUpdates && liveUpdates.size) {
+    for (const u of liveUpdates.values()) {
+      if (u.seq != null && (currentSeq === null || u.seq < currentSeq)) currentSeq = u.seq;
+    }
+  }
+
+  const rowsHtml = staticTrip.stops.map((s) => {
+    const live = liveUpdates ? liveUpdates.get(s.stopId) : null;
+    let etaSeconds = null;
+    if (live && live.time != null) {
+      etaSeconds = live.time - nowSec;
+    } else if (s.arr != null) {
+      etaSeconds = midnightSec + s.arr - nowSec;
+    }
+    const isPassed = currentSeq != null && s.seq < currentSeq;
+    const isCurrent = currentSeq != null && s.seq === currentSeq;
+    const rowClass = "stop-board-row" + (isPassed ? " stop-board-row-passed" : "") + (isCurrent ? " stop-board-row-current" : "");
+    const timeText = isPassed ? "" : formatStopBoardEta(etaSeconds);
+    return `<div class="${rowClass}"><span class="stop-board-row-time">${timeText}</span><span class="stop-board-row-name">${s.name}</span></div>`;
+  }).join("");
+  stopBoardListEl.innerHTML = rowsHtml;
+  stopBoardListEl.style.setProperty("--stop-board-line-color", tripInfo.color ? `#${tripInfo.color}` : "");
+  stopBoardEl.classList.add("visible");
+  positionStopBoard();
+
+  // Scrolla mjukt så den aktuella (eller första ej passerade)
+  // hållplatsen alltid syns, ungefär som en riktig ombordskylt som
+  // följer med resan.
+  const targetRow = stopBoardListEl.querySelector(".stop-board-row-current") || stopBoardListEl.querySelector(".stop-board-row:not(.stop-board-row-passed)");
+  if (targetRow) targetRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+// Positionerar hållplats-rutan i förhållande till den redan synliga
+// följ-rutan — läses av varje gång rutan uppdateras (följ-rutans bredd
+// kan ändras med innehållet, t.ex. olika långa destinationsnamn).
+// Desktop: egen ruta till höger om följ-rutan, i samma nederkant.
+// Mobil: full bredd, dockad direkt ovanför följ-rutans fasta bottensheet.
+function positionStopBoard() {
+  if (window.innerWidth <= 700) {
+    // Ingen transform inblandad här (se mobil-CSS:n för #follow-hud),
+    // så offsetHeight räcker fint.
+    stopBoardEl.style.left = "0";
+    stopBoardEl.style.right = "";
+    stopBoardEl.style.bottom = followHud.offsetHeight + "px";
+    return;
+  }
+  // Desktop: följ-rutan centreras med "left: 50%; transform:
+  // translateX(-50%)", vilket offsetLeft/offsetWidth INTE räknar med
+  // (de speglar bara layouten FÖRE transformen). Måste därför läsa av
+  // den faktiska, redan förskjutna positionen på skärmen via
+  // getBoundingClientRect() och räkna om till samma koordinatsystem
+  // som den gemensamma, positionerade förälderns (annars hamnar rutan
+  // fel, för långt åt höger).
+  const parent = followHud.offsetParent || followHud.parentElement;
+  const parentRect = parent.getBoundingClientRect();
+  const hudRect = followHud.getBoundingClientRect();
+  const gap = 14;
+  stopBoardEl.style.left = (hudRect.right - parentRect.left + gap) + "px";
+  stopBoardEl.style.right = "";
+  stopBoardEl.style.bottom = "22px";
+}
+window.addEventListener("resize", () => {
+  if (stopBoardEl.classList.contains("visible")) positionStopBoard();
+});
+
 const TRAIN_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="13" height="13">
     <rect x="5" y="3" width="14" height="14" rx="4" fill="currentColor"/>
@@ -2761,39 +3138,34 @@ if (window.matchMedia("(max-width: 700px)").matches) {
   document.addEventListener("click", triggerFullscreenOnce, { once: true, capture: true });
 }
 
-// Donera-popup — dyker upp 10 sekunder efter sidladdning, bara en
-// gång totalt per webbläsare (sparas i localStorage, inte kopplat
-// till en riktig person/inloggning).
-const DONATE_POPUP_STORAGE_KEY = "skanelive_donate_popup_seen";
+// Donera-popup — dyker upp 10 sekunder efter sidladdning, var 5:e
+// besök från samma webbläsare (sparas i localStorage, inte kopplat
+// till en riktig person/inloggning). Måste stängas med krysset
+// specifikt — klick utanför (bakgrunden) stänger den INTE längre.
+const DONATE_POPUP_VISIT_COUNT_KEY = "skanelive_donate_popup_visit_count";
 const donatePopup = document.getElementById("donate-popup");
 const donatePopupClose = document.getElementById("donate-popup-close");
 const donatePopupBackdrop = document.getElementById("donate-popup-backdrop");
 function closeDonatePopup() {
   donatePopup.classList.remove("visible");
   donatePopupBackdrop.classList.remove("visible");
-  localStorage.setItem(DONATE_POPUP_STORAGE_KEY, "1");
 }
-if (!localStorage.getItem(DONATE_POPUP_STORAGE_KEY)) {
+const donateVisitCount = (parseInt(localStorage.getItem(DONATE_POPUP_VISIT_COUNT_KEY), 10) || 0) + 1;
+localStorage.setItem(DONATE_POPUP_VISIT_COUNT_KEY, String(donateVisitCount));
+if (donateVisitCount % 5 === 0) {
   setTimeout(() => {
-    // Kolla igen precis innan den visas — ifall en annan flik hunnit
-    // stänga den och sätta markeringen under tiden.
-    if (!localStorage.getItem(DONATE_POPUP_STORAGE_KEY)) {
-      donatePopup.classList.add("visible");
-      donatePopupBackdrop.classList.add("visible");
-    }
+    donatePopup.classList.add("visible");
+    donatePopupBackdrop.classList.add("visible");
   }, 10000);
 }
 donatePopupClose.addEventListener("click", closeDonatePopup);
-donatePopupBackdrop.addEventListener("click", closeDonatePopup);
-donatePopup.querySelector("a").addEventListener("click", () => {
-  localStorage.setItem(DONATE_POPUP_STORAGE_KEY, "1");
-});
 
 (async function init() {
   console.time("⏱ init() start → loadProtoSchema klar");
   await loadProtoSchema();
   console.timeEnd("⏱ init() start → loadProtoSchema klar");
   pollLoop();
+  tripUpdatesPollLoop();
   loadVisitorStats();
   loadRouteColors().then(() => {
     staticDataLoaded = true;
