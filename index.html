@@ -819,8 +819,8 @@
     border-radius: 50%;
     border: none;
     background: var(--stop-board-line-color, var(--accent));
-    color: #0a0a0a;
-    font-size: 0.85rem;
+    color: #ffffff;
+    font-size: 0.9rem;
     line-height: 1;
     cursor: pointer;
     box-shadow: 0 2px 10px rgba(0,0,0,0.55);
@@ -1203,7 +1203,7 @@
         <button id="stop-board-minimize-btn" aria-label="Minimera hållplatslistan">−</button>
       </div>
       <div id="stop-board-list"></div>
-      <button id="stop-board-jump-btn" aria-label="Hoppa till nuvarande hållplats">↓</button>
+      <button id="stop-board-jump-btn" aria-label="Hoppa till nuvarande hållplats">↑</button>
     </div>
     <div id="line-hud">
       <div class="follow-hud-inner">
@@ -3075,6 +3075,11 @@ let stopBoardUserScrolledAway = false;
 let stopBoardProgrammaticScroll = false;
 let stopBoardProgrammaticScrollResetTimer = null;
 let stopBoardShownForTripId = null;
+// Hur långt man måste ha scrollat NEDÅT förbi nuvarande hållplats
+// innan pilknappen dyker upp — bara scrollat en liten bit, eller
+// uppåt, ska INTE räknas (pilknappen ska bara synas när man scrollat
+// ner en bit, enligt hur du ville ha det).
+const STOP_BOARD_SCROLL_AWAY_THRESHOLD_PX = 40;
 function stopBoardBeginProgrammaticScroll(resetDelayMs) {
   stopBoardProgrammaticScroll = true;
   clearTimeout(stopBoardProgrammaticScrollResetTimer);
@@ -3082,13 +3087,18 @@ function stopBoardBeginProgrammaticScroll(resetDelayMs) {
     stopBoardProgrammaticScroll = false;
   }, resetDelayMs);
 }
-function scrollStopBoardToCurrent(smooth) {
+// Var listan SKA vara scrollad för att visa nuvarande hållplats — en
+// bit in från toppen (inte centrerad, inte längst upp) så man mest ser
+// hållplatserna som är KVAR, med lite sammanhang bakåt.
+function getStopBoardTargetScrollTop() {
   const targetRow = stopBoardListEl.querySelector(".stop-board-row-current") || stopBoardListEl.querySelector(".stop-board-row:not(.stop-board-row-passed)");
-  if (!targetRow) return;
-  // En bit in från toppen — INTE centrerad och inte längst upp — så
-  // man mest ser hållplatserna som är KVAR, med lite sammanhang bakåt.
+  if (!targetRow) return null;
   const offsetFromTop = stopBoardListEl.clientHeight * 0.22;
-  const targetScrollTop = Math.max(0, targetRow.offsetTop - offsetFromTop);
+  return Math.max(0, targetRow.offsetTop - offsetFromTop);
+}
+function scrollStopBoardToCurrent(smooth) {
+  const targetScrollTop = getStopBoardTargetScrollTop();
+  if (targetScrollTop == null) return;
   stopBoardBeginProgrammaticScroll(smooth ? 700 : 50);
   stopBoardListEl.scrollTo({ top: targetScrollTop, behavior: smooth ? "smooth" : "auto" });
   stopBoardUserScrolledAway = false;
@@ -3096,8 +3106,13 @@ function scrollStopBoardToCurrent(smooth) {
 }
 stopBoardListEl.addEventListener("scroll", () => {
   if (stopBoardProgrammaticScroll) return; // vårt eget scrollTo, inte användaren
-  stopBoardUserScrolledAway = true;
-  stopBoardJumpBtn.classList.add("visible");
+  const targetScrollTop = getStopBoardTargetScrollTop();
+  // Bara nedåt, och bara förbi tröskeln — annars visas knappen redan
+  // vid minsta lilla scroll, eller när man scrollar uppåt (mot redan
+  // passerade hållplatser), vilket du inte ville.
+  const scrolledDownPastTarget = targetScrollTop != null && stopBoardListEl.scrollTop > targetScrollTop + STOP_BOARD_SCROLL_AWAY_THRESHOLD_PX;
+  stopBoardUserScrolledAway = scrolledDownPastTarget;
+  stopBoardJumpBtn.classList.toggle("visible", scrolledDownPastTarget);
 });
 stopBoardJumpBtn.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -3219,6 +3234,14 @@ function updateStopBoard() {
   } else {
     stopBoardBeginProgrammaticScroll(50);
     stopBoardListEl.scrollTop = prevScrollTop;
+    // Räkna om ifall den återställda positionen fortfarande räknas som
+    // "scrollat bort" (samma tröskel/regel som scroll-lyssnaren) — annars
+    // kunde knappen bli kvar synlig även efter att nuvarande hållplats
+    // hunnit ikapp den gamla scrollpositionen.
+    const targetScrollTop = getStopBoardTargetScrollTop();
+    const stillScrolledAway = targetScrollTop != null && prevScrollTop > targetScrollTop + STOP_BOARD_SCROLL_AWAY_THRESHOLD_PX;
+    stopBoardUserScrolledAway = stillScrolledAway;
+    stopBoardJumpBtn.classList.toggle("visible", stillScrolledAway);
   }
 }
 // Positionerar hållplats-rutan i förhållande till den redan synliga
