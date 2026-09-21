@@ -793,20 +793,19 @@ function minDistanceToPointMeters(points, target) {
   }
 
   // ---- stop_board.json: hållplatslistan (med schemalagda tider) per
-  // resa, för den nya "hållplats-ruta"-funktionen i fordonspopupen
-  // (visar var man är och tid till nästa hållplats, som skärmen ombord
-  // på bussen). Byggs MEDVETET bara för ett litet urval linjer just nu
-  // (styrs av STOP_BOARD_ROUTE_SHORT_NAMES nedan) — funktionen testas
-  // först på en enda linje innan den breddas till hela nätet, både för
-  // att hålla filstorleken nere och för att kunna se hur det ser ut
-  // innan alla linjer får den. Bredda listan (eller sätt "*" och
-  // hantera det i loopen) när funktionen är klar för lansering.
-  const STOP_BOARD_ROUTE_SHORT_NAMES = new Set(["166"]);
+  // resa, för "hållplats-ruta"-funktionen i fordonspopupen (visar var
+  // man är och tid till nästa hållplats, som skärmen ombord på
+  // bussen/tåget). Byggdes MEDVETET bara för linje 166 under betatestet
+  // — nu klart för resten av trafiken, MED UNDANTAG för de simulerade
+  // Öresundstågen (brand === "oresundstag"), eftersom de inte har någon
+  // riktig GTFS-Realtime-position/TripUpdates att visa live-data för
+  // (funktionen ska bara vara aktiv för riktiga, GPS-spårade fordon).
   const stopBoardTrips = {};
   let stopBoardTripCount = 0;
   for (const [tripId, routeId] of routeIdByTripId) {
     const info = routesById.get(routeId);
-    if (!info || !STOP_BOARD_ROUTE_SHORT_NAMES.has(info.shortName)) continue;
+    if (!info) continue;
+    if (info.brand === "oresundstag") continue;
     const rawStops = stopSeqByTripId.get(tripId);
     if (!rawStops || rawStops.length < 2) continue;
     const sorted = [...rawStops].sort((a, b) => a.seq - b.seq);
@@ -824,7 +823,7 @@ function minDistanceToPointMeters(points, target) {
     stopBoardTrips[tripId] = { routeId, line: info.shortName, color: info.color, stops };
     stopBoardTripCount++;
   }
-  console.log(`stop_board.json: ${stopBoardTripCount} resor med hållplatslista byggda (linjer: ${[...STOP_BOARD_ROUTE_SHORT_NAMES].join(", ")})`);
+  console.log(`stop_board.json: ${stopBoardTripCount} resor med hållplatslista byggda (alla linjer utom simulerade Öresundståg)`);
 
   const builtAt = new Date().toISOString();
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
