@@ -5,7 +5,7 @@ name: Bygg GTFS-data
 # uppdatera datan direkt utan att vänta till natten.
 on:
   schedule:
-    - cron: "0 4 * * *"
+    - cron: "0 4 * * 1,4"
   workflow_dispatch:
 
 # Behövs för att workflow-jobbet ska få lov att committa/pusha ändringar
